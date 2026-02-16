@@ -39,6 +39,21 @@ Legend:
 | `sosfilt` | `SosFiltKernel` + `SosFilt1D` | partial | yes |
 | `sosfiltfilt` | `SosFiltFiltKernel` + `SosFiltFilt1D` | partial | yes |
 
+## Remaining Public Interface Sweep
+
+This is the active line-by-line sweep list for remaining public free-function surfaces.
+
+| Module | Public API | trait-first status | Notes |
+| --- | --- | --- | --- |
+| `signal/filter` | `lfilter` | partial | kernel exists; ndarray multi-axis API still legacy-first |
+| `signal/filter` | `sosfilt_dyn` / `sosfilt_item` / `sosfilt_st` | partial | kernels exist; low-level helpers still direct |
+| `signal/filter` | `sosfiltfilt_dyn` | partial | kernel exists; free function still primary helper |
+| `signal/filter` | `savgol_filter_dyn` / `savgol_coeffs_dyn` | pending | still panic-based argument validation |
+| `signal/filter` | `lfilter_zi_dyn` / `sosfilt_zi_dyn` | pending | no trait-first wrappers yet |
+| `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | pending | helper utilities pending trait policy |
+| `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | partial | kernels for `firwin/iirfilter/butter` landed |
+| `signal/wave` | `square` (ndarray N-D) | partial | 1D trait kernel landed; N-D API remains legacy |
+
 ## Acceptance Gate Tracker
 
 - [x] `cargo fmt --all -- --check`
