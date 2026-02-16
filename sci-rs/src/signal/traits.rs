@@ -111,6 +111,21 @@ pub trait FiltFilt1D<T> {
         I: Read1D<T> + ?Sized;
 }
 
+/// 1D Savitzky-Golay filtering capability.
+pub trait SavgolFilter1D<T> {
+    /// Run Savitzky-Golay filtering into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Run Savitzky-Golay filtering and allocate output.
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
 /// 1D `sosfilt` capability.
 pub trait SosFilt1D<T> {
     /// Run second-order-sections filtering into a caller-provided output buffer.

@@ -1,7 +1,7 @@
 //! Trait-first kernel wrappers for filtering primitives.
 
 use crate::kernel::{ConfigError, ExecInvariantViolation, KernelLifecycle, Read1D, Write1D};
-use crate::signal::traits::{FiltFilt1D, LFilter1D, SosFilt1D, SosFiltFilt1D};
+use crate::signal::traits::{FiltFilt1D, LFilter1D, SavgolFilter1D, SosFilt1D, SosFiltFilt1D};
 use alloc::vec::Vec;
 use core::iter::Sum;
 use core::ops::{Add, Sub};
@@ -322,11 +322,109 @@ where
     }
 }
 
+/// Constructor config for [`SavgolFilterKernel`].
+#[derive(Debug, Clone)]
+pub struct SavgolFilterConfig<T> {
+    /// Odd window length.
+    pub window_length: usize,
+    /// Polynomial order.
+    pub polyorder: usize,
+    /// Derivative order.
+    pub deriv: Option<usize>,
+    /// Sample spacing.
+    pub delta: Option<T>,
+}
+
+/// Trait-first Savitzky-Golay filtering kernel.
+#[derive(Debug, Clone)]
+pub struct SavgolFilterKernel<T> {
+    window_length: usize,
+    polyorder: usize,
+    deriv: Option<usize>,
+    delta: Option<T>,
+}
+
+impl<T> KernelLifecycle for SavgolFilterKernel<T>
+where
+    T: RealField + Copy + Sum,
+{
+    type Config = SavgolFilterConfig<T>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.window_length == 0 || config.window_length.is_multiple_of(2) {
+            return Err(ConfigError::InvalidArgument {
+                arg: "window_length",
+                reason: "window_length must be odd and greater than zero",
+            });
+        }
+        if config.polyorder >= config.window_length {
+            return Err(ConfigError::InvalidArgument {
+                arg: "polyorder",
+                reason: "polyorder must be less than window_length",
+            });
+        }
+        if config.window_length < config.polyorder + 2 {
+            return Err(ConfigError::InvalidArgument {
+                arg: "window_length/polyorder",
+                reason: "window_length is too small for the polynomial order",
+            });
+        }
+
+        Ok(Self {
+            window_length: config.window_length,
+            polyorder: config.polyorder,
+            deriv: config.deriv,
+            delta: config.delta,
+        })
+    }
+}
+
+impl<T> SavgolFilter1D<T> for SavgolFilterKernel<T>
+where
+    T: RealField + Copy + Sum,
+{
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized,
+    {
+        let filtered = self.run_alloc(input)?;
+        let out = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out.len() != filtered.len() {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: filtered.len(),
+                got: out.len(),
+            });
+        }
+        out.copy_from_slice(&filtered);
+        Ok(())
+    }
+
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(super::savgol_filter_dyn(
+            input.iter(),
+            self.window_length,
+            self.polyorder,
+            self.deriv,
+            self.delta,
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::kernel::ConfigError;
-    use crate::signal::filter::{design::Sos, sosfilt_dyn, sosfiltfilt_dyn, FiltFiltPad};
+    use crate::signal::filter::{
+        design::Sos, savgol_filter_dyn, sosfilt_dyn, sosfiltfilt_dyn, FiltFiltPad,
+    };
     use ndarray::Array1;
 
     #[test]
@@ -455,5 +553,52 @@ mod tests {
         })
         .expect_err("empty a must fail");
         assert_eq!(err, ConfigError::EmptyInput { arg: "a" });
+    }
+
+    #[test]
+    fn savgol_kernel_matches_reference_and_validates_lengths() {
+        let kernel = SavgolFilterKernel::try_new(SavgolFilterConfig {
+            window_length: 5,
+            polyorder: 2,
+            deriv: None,
+            delta: None::<f64>,
+        })
+        .expect("kernel should initialize");
+        let input = [2.0f64, 2.0, 5.0, 2.0, 1.0, 0.0, 1.0, 4.0, 9.0];
+
+        let actual = kernel.run_alloc(&input).expect("savgol should run");
+        let expected = savgol_filter_dyn(input.iter(), 5, 2, None, None);
+        assert_eq!(actual, expected);
+
+        let mut too_short = vec![0.0f64; input.len() - 1];
+        let err = kernel
+            .run_into(&input, &mut too_short)
+            .expect_err("output size mismatch should fail");
+        assert!(matches!(
+            err,
+            ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: 9,
+                got: 8
+            }
+        ));
+    }
+
+    #[test]
+    fn savgol_kernel_constructor_validation() {
+        let err = SavgolFilterKernel::<f64>::try_new(SavgolFilterConfig {
+            window_length: 4,
+            polyorder: 2,
+            deriv: None,
+            delta: None,
+        })
+        .expect_err("even window must fail");
+        assert_eq!(
+            err,
+            ConfigError::InvalidArgument {
+                arg: "window_length",
+                reason: "window_length must be odd and greater than zero",
+            }
+        );
     }
 }
