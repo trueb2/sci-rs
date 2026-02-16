@@ -1,9 +1,316 @@
+use crate::kernel::{ConfigError, ExecInvariantViolation, KernelLifecycle, Read1D, Write1D};
 use core::{borrow::Borrow, iter::Sum, ops::Add};
 use itertools::Itertools;
 use num_traits::{Float, Num, NumCast, Signed};
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+
+/// 1D mean reduction capability.
+pub trait MeanReduce1D<T> {
+    /// Compute the mean and sample count.
+    fn run<I>(&self, input: &I) -> Result<(T, usize), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D variance reduction capability.
+pub trait VarianceReduce1D<T> {
+    /// Compute the variance and sample count.
+    fn run<I>(&self, input: &I) -> Result<(T, usize), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D standard-deviation reduction capability.
+pub trait StdevReduce1D<T> {
+    /// Compute the standard deviation and sample count.
+    fn run<I>(&self, input: &I) -> Result<(T, usize), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D median reduction capability.
+#[cfg(feature = "alloc")]
+pub trait MedianReduce1D<T> {
+    /// Compute the median and sample count.
+    fn run<I>(&self, input: &I) -> Result<(T, usize), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D median absolute deviation reduction capability.
+#[cfg(feature = "alloc")]
+pub trait MadReduce1D<T> {
+    /// Compute the median absolute deviation and sample count.
+    fn run<I>(&self, input: &I) -> Result<(T, usize), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D z-score normalization capability.
+pub trait ZScoreNormalize1D<T> {
+    /// Normalize into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Normalize and allocate output.
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D modified z-score normalization capability.
+#[cfg(feature = "alloc")]
+pub trait ModZScoreNormalize1D<T> {
+    /// Normalize into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Normalize and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// Empty config for stateless kernels.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StatsConfig;
+
+/// Trait-first mean kernel.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MeanKernel;
+
+impl KernelLifecycle for MeanKernel {
+    type Config = StatsConfig;
+
+    fn try_new(_: Self::Config) -> Result<Self, ConfigError> {
+        Ok(Self)
+    }
+}
+
+impl<T> MeanReduce1D<T> for MeanKernel
+where
+    T: Num + NumCast + Default + Copy + Add,
+{
+    fn run<I>(&self, input: &I) -> Result<(T, usize), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(mean(input.iter()))
+    }
+}
+
+/// Trait-first variance kernel.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VarianceKernel;
+
+impl KernelLifecycle for VarianceKernel {
+    type Config = StatsConfig;
+
+    fn try_new(_: Self::Config) -> Result<Self, ConfigError> {
+        Ok(Self)
+    }
+}
+
+impl<T> VarianceReduce1D<T> for VarianceKernel
+where
+    T: Float + Default + Sum,
+{
+    fn run<I>(&self, input: &I) -> Result<(T, usize), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(variance(input.iter()))
+    }
+}
+
+/// Trait-first standard deviation kernel.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StdevKernel;
+
+impl KernelLifecycle for StdevKernel {
+    type Config = StatsConfig;
+
+    fn try_new(_: Self::Config) -> Result<Self, ConfigError> {
+        Ok(Self)
+    }
+}
+
+impl<T> StdevReduce1D<T> for StdevKernel
+where
+    T: Float + Default + Sum,
+{
+    fn run<I>(&self, input: &I) -> Result<(T, usize), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(stdev(input.iter()))
+    }
+}
+
+/// Trait-first median kernel.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MedianKernel;
+
+#[cfg(feature = "alloc")]
+impl KernelLifecycle for MedianKernel {
+    type Config = StatsConfig;
+
+    fn try_new(_: Self::Config) -> Result<Self, ConfigError> {
+        Ok(Self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T> MedianReduce1D<T> for MedianKernel
+where
+    T: Num + NumCast + PartialOrd + Copy + Default,
+{
+    fn run<I>(&self, input: &I) -> Result<(T, usize), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(median(input.iter()))
+    }
+}
+
+/// Trait-first MAD kernel.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MadKernel;
+
+#[cfg(feature = "alloc")]
+impl KernelLifecycle for MadKernel {
+    type Config = StatsConfig;
+
+    fn try_new(_: Self::Config) -> Result<Self, ConfigError> {
+        Ok(Self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T> MadReduce1D<T> for MadKernel
+where
+    T: Float + Default + Sum,
+{
+    fn run<I>(&self, input: &I) -> Result<(T, usize), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(median_abs_deviation(input.iter()))
+    }
+}
+
+/// Trait-first z-score kernel.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ZScoreKernel;
+
+impl KernelLifecycle for ZScoreKernel {
+    type Config = StatsConfig;
+
+    fn try_new(_: Self::Config) -> Result<Self, ConfigError> {
+        Ok(Self)
+    }
+}
+
+impl<T> ZScoreNormalize1D<T> for ZScoreKernel
+where
+    T: Float + Default + Copy + Add + Sum,
+{
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        let out = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out.len() != input.len() {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: input.len(),
+                got: out.len(),
+            });
+        }
+
+        let mean = mean(input.iter()).0;
+        let standard_deviation = stdev(input.iter()).0;
+        out.iter_mut()
+            .zip(input.iter())
+            .for_each(|(out, yi)| *out = (*yi - mean) / standard_deviation);
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(zscore(input.iter()).collect())
+    }
+}
+
+/// Trait-first modified z-score kernel.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ModZScoreKernel;
+
+#[cfg(feature = "alloc")]
+impl KernelLifecycle for ModZScoreKernel {
+    type Config = StatsConfig;
+
+    fn try_new(_: Self::Config) -> Result<Self, ConfigError> {
+        Ok(Self)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T> ModZScoreNormalize1D<T> for ModZScoreKernel
+where
+    T: Float + Default + Copy + Add + Sum,
+{
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized,
+    {
+        let normalized = self.run_alloc(input)?;
+        let out = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out.len() != normalized.len() {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: normalized.len(),
+                got: out.len(),
+            });
+        }
+        out.copy_from_slice(&normalized);
+        Ok(())
+    }
+
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(mod_zscore(input.iter()).collect())
+    }
+}
 
 // Quick select finds the `i`th smallest element with 2N comparisons
 #[cfg(feature = "alloc")]
@@ -463,7 +770,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::KernelLifecycle;
     use approx::assert_relative_eq;
+    use ndarray::Array1;
 
     #[cfg(feature = "std")]
     use {std::f64::consts::PI, std::vec::Vec};
@@ -506,5 +815,73 @@ mod tests {
     fn it_works() {
         let result = 2 + 2;
         assert_eq!(result, 4);
+    }
+
+    #[test]
+    fn mean_variance_stdev_kernels_match_reference() {
+        let input = [1.0f64, 2.0, 3.0, 4.0, 5.0];
+        let mean_kernel = MeanKernel::try_new(StatsConfig).expect("mean kernel");
+        let var_kernel = VarianceKernel::try_new(StatsConfig).expect("variance kernel");
+        let stdev_kernel = StdevKernel::try_new(StatsConfig).expect("stdev kernel");
+
+        let (m, n) = mean_kernel.run(&input).expect("mean run");
+        let (v, _) = var_kernel.run(&input).expect("variance run");
+        let (s, _) = stdev_kernel.run(&input).expect("stdev run");
+
+        assert_eq!(n, input.len());
+        assert_relative_eq!(m, 3.0, epsilon = 1e-12);
+        assert_relative_eq!(v, 2.0, epsilon = 1e-12);
+        assert_relative_eq!(s, 2.0f64.sqrt(), epsilon = 1e-12);
+    }
+
+    #[test]
+    fn zscore_kernel_run_into_ndarray_output() {
+        let input = [1.0f32, 2.0, 3.0, 4.0, 5.0];
+        let kernel = ZScoreKernel::try_new(StatsConfig).expect("zscore kernel");
+        let mut out = Array1::from(vec![0.0f32; input.len()]);
+        kernel.run_into(&input, &mut out).expect("run_into");
+
+        let expected: Vec<f32> = zscore(input.iter()).collect();
+        out.iter()
+            .zip(expected.iter())
+            .for_each(|(a, b)| assert_relative_eq!(*a, *b, epsilon = 1e-6));
+    }
+
+    #[test]
+    fn zscore_kernel_validates_output_length() {
+        let input = [1.0f32, 2.0, 3.0];
+        let kernel = ZScoreKernel::try_new(StatsConfig).expect("zscore kernel");
+        let mut out = [0.0f32; 2];
+        let err = kernel
+            .run_into(&input, &mut out)
+            .expect_err("length mismatch should fail");
+        assert!(matches!(
+            err,
+            ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: 3,
+                got: 2
+            }
+        ));
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn median_mad_and_modzscore_kernels_match_reference() {
+        let input = [6.0f64, 7.0, 7.0, 8.0, 12.0, 14.0, 15.0, 16.0, 16.0, 19.0];
+        let median_kernel = MedianKernel::try_new(StatsConfig).expect("median kernel");
+        let mad_kernel = MadKernel::try_new(StatsConfig).expect("mad kernel");
+        let modz_kernel = ModZScoreKernel::try_new(StatsConfig).expect("modz kernel");
+
+        let (median_v, _) = median_kernel.run(&input).expect("median");
+        let (mad_v, _) = mad_kernel.run(&input).expect("mad");
+        let modz = modz_kernel.run_alloc(&input).expect("mod-zscore");
+        let expected_modz: Vec<f64> = mod_zscore(input.iter()).collect();
+
+        assert_relative_eq!(median_v, median(input.iter()).0, epsilon = 1e-12);
+        assert_relative_eq!(mad_v, median_abs_deviation(input.iter()).0, epsilon = 1e-12);
+        modz.iter()
+            .zip(expected_modz.iter())
+            .for_each(|(a, b)| assert_relative_eq!(*a, *b, epsilon = 1e-12));
     }
 }

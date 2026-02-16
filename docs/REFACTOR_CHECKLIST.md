@@ -25,6 +25,13 @@ Legend:
 | design | `FirWinDesign<T>` | yes | yes | yes | `FirWinKernel` with constructor validation |
 | design | `IirDesign<T>` | yes | yes | yes | `IirFilterKernel` and `ButterKernel` |
 | windows | `WindowGenerate<T>` | yes | yes | yes | `WindowKernel` and owned window builder |
+| stats | `MeanReduce1D<T>` | yes | yes | yes | `MeanKernel` |
+| stats | `VarianceReduce1D<T>` | yes | yes | yes | `VarianceKernel` |
+| stats | `StdevReduce1D<T>` | yes | yes | yes | `StdevKernel` |
+| stats | `MedianReduce1D<T>` | yes | yes | yes | `MedianKernel` |
+| stats | `MadReduce1D<T>` | yes | yes | yes | `MadKernel` |
+| stats | `ZScoreNormalize1D<T>` | yes | yes | yes | `ZScoreKernel` |
+| stats | `ModZScoreNormalize1D<T>` | yes | yes | yes | `ModZScoreKernel` |
 | migration | legacy free functions cleanup | yes | partial | partial | `convolve`/`correlate`/`resample` shimmed |
 | contract | local contract runner (`xtask`) | yes | yes | yes | local-only artifacts under `target/contracts` |
 
@@ -54,6 +61,7 @@ This is the active line-by-line sweep list for remaining public free-function su
 | `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | pending | helper utilities pending trait policy |
 | `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | partial | kernels for `firwin/iirfilter/butter` landed |
 | `signal/wave` | `square` (ndarray N-D) | partial | 1D trait kernel landed; N-D API remains legacy |
+| `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | partial | trait kernels landed; free functions retained as shims |
 
 ## Acceptance Gate Tracker
 
