@@ -1,15 +1,43 @@
 use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Debug utility function that will run a python script to plot the data.
 ///
 /// This function generates a Python script to create plots of the input data and their autocorrelations.
-/// It then executes the script using the system's Python interpreter.
+/// It then executes the script using the system's Python interpreter with a non-interactive backend.
 ///
-/// Note: This function will open a new window to display the plots and will block execution until the window is closed.
-/// It also suppresses stdout and stderr from the Python process.
+/// Note: This function is non-blocking and writes a PNG image into `target/contracts/plots`.
 pub fn python_plot(xs: Vec<&[f32]>) {
+    let _ = python_plot_to_path(xs, None::<&Path>);
+}
+
+/// Generate a non-interactive Python plot and save it to disk.
+///
+/// Returns the output path when plotting succeeds.
+pub fn python_plot_to_path<P: AsRef<Path>>(
+    xs: Vec<&[f32]>,
+    output_path: Option<P>,
+) -> std::io::Result<PathBuf> {
+    let output_path = match output_path {
+        Some(path) => path.as_ref().to_path_buf(),
+        None => {
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            PathBuf::from(format!("target/contracts/plots/python_plot_{ts}.png"))
+        }
+    };
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let output_path_literal = output_path.to_string_lossy().replace('\\', "\\\\");
     let script = format!(
         r#"
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy.signal import correlate
@@ -29,30 +57,35 @@ for i, x in enumerate(xs):
     ax.plot(offsets, normcorr, label = f"Autocorrelation of C{{i}}")
     ax.legend()
     ax.set_xlabel("Lag")
-plt.show()
+fig.tight_layout()
+fig.savefig(r"{}", dpi=150)
+plt.close(fig)
 "#,
-        xs
+        xs, output_path_literal
     );
     // Run the script with python
     let script = script.as_bytes();
-    let mut python = match std::process::Command::new("python")
+    let mut python = std::process::Command::new("python")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null()) // noisy
         .stderr(std::process::Stdio::null()) // noisy
-        .spawn()
-    {
-        Ok(p) => p,
-        Err(_) => return, // Return early if python fails to start
-    };
+        .spawn()?;
 
     if let Some(mut stdin) = python.stdin.take() {
-        if stdin.write_all(script).is_err() {
-            return; // Return early if writing fails
-        }
+        stdin.write_all(script)?;
     } else {
-        return; // Return early if we can't get stdin
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "Failed to open stdin for python process.",
+        ));
     }
 
-    // Wait for the python process to finish, ignoring any errors
-    let _ = python.wait(); // Ignore errors as this may be called from CI
+    // Wait for completion and return a deterministic error if plotting fails.
+    let status = python.wait()?;
+    if !status.success() {
+        return Err(std::io::Error::other(
+            "Python plotting script failed with non-zero exit status.",
+        ));
+    }
+    Ok(output_path)
 }

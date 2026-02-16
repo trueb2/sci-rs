@@ -13,7 +13,7 @@ use sci_rs_core::{Error, Result};
 
 /// Padding utilised in [FiltFilt::filtfilt].
 // WARN: Related/Duplicate: [super::Pad].
-#[derive(Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub enum FiltFiltPadType {
     /// Odd extensions
     #[default]
@@ -140,7 +140,7 @@ impl FiltFiltPadType {
 }
 
 /// Arguments for [FiltFilt::filtfilt].
-#[derive(Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct FiltFiltPad {
     /// Padding type.
     pub pad_type: FiltFiltPadType,
@@ -315,7 +315,13 @@ where
     where
         Self: Sized,
     {
-        todo!("Gust method of FiltFilt is not yet implemented.");
+        let _ = (b, a, x, axis, irlen);
+        Err(Error::InvalidArg {
+            arg: "method".into(),
+            reason:
+                "FiltFilt gust method is not implemented in this refactor stage. Use padding method for now."
+                    .into(),
+        })
     }
 }
 

@@ -77,6 +77,18 @@ Please compare your changes for correctness against SciPy if implementing or cor
 
 Generating plots and adding plots to PRs can help accelerate debugging and approval.
 
+### Refactor Workflow
+
+Current refactor policy and contributor guardrails are documented in `AGENTS.md`.
+
+Local contract generation command:
+
+```bash
+cargo run -p xtask -- contracts
+```
+
+This writes local-only parity/performance artifacts to `target/contracts/<timestamp>/`.
+
 Here is a quick plotting script
 
 ```python
@@ -109,9 +121,9 @@ ax.set_ylabel('Magnitude Difference (a.u.)')
 ax.set_xlabel('Time (s)')
 ax.legend()
 
-# Manually inspect the data and grab screenshot
+# Save non-blocking plot artifact for inspection
 plt.tight_layout()
-plt.show()
+plt.savefig("comparison.png", dpi=150)
 ```
 
 ![Example Plot](./images/example-plot.png)
@@ -191,5 +203,3 @@ import sciprs
 # do what you want
 print(sciprs.call_new_function(1,2,3))
 ```
-
-

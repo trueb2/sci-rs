@@ -117,12 +117,11 @@ where
             if rs.is_none() || rp.is_none() {
                 panic!("Both rp and rs must be provided to design an elliptic filter.");
             }
-            // ellipap::<N>(rp, rs)
-            todo!()
+            panic!("FilterType::CauerElliptic is not implemented yet in this refactor stage.")
         }
         FilterType::BesselThomson(norm) => {
-            // besselap::<N>(norm = norm),
-            todo!()
+            let _ = norm;
+            panic!("FilterType::BesselThomson is not implemented yet in this refactor stage.")
         }
     };
 

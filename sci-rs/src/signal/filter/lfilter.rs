@@ -423,8 +423,11 @@ where
     }
 
     if a.len() > 1 {
-        todo!();
-    };
+        return Err(Error::InvalidArg {
+            arg: "a".into(),
+            reason: "IIR lfilter path is not yet implemented in this API. Use sosfilt/sosfiltfilt kernels for IIR filtering.".into(),
+        });
+    }
 
     let (axis, axis_inner) = {
         let ax = check_and_get_axis_dyn(axis, &x)?;
@@ -654,7 +657,12 @@ where
     T: 'a,
     S: Data<Elem = T> + 'a,
 {
-    todo!()
+    Err(Error::InvalidArg {
+        arg: "a".into(),
+        reason:
+            "IIR lfilter path is not yet implemented in this API. Use sosfilt/sosfiltfilt kernels for IIR filtering."
+                .into(),
+    })
 }
 
 #[cfg(test)]

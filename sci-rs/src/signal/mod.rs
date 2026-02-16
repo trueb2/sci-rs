@@ -3,6 +3,9 @@
 /// `scipy.signal`](https://docs.scipy.org/doc/scipy/reference/signal.html#filtering).
 pub mod filter;
 
+/// Trait-first signal kernel capability interfaces.
+pub mod traits;
+
 /// Signal Generation  
 /// Contains functions from the [Waveforms section of
 /// `scipy.signal`](<https://docs.scipy.org/doc/scipy/reference/signal.html#waveforms>).

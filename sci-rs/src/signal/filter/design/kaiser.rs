@@ -207,7 +207,7 @@ where
 /// >>> plt.xlabel('Frequency (Hz)')
 /// >>> plt.ylabel('Deviation from ideal (dB)')
 /// >>> plt.title('Lowpass Filter Frequency Response')
-/// >>> plt.show()
+/// >>> plt.savefig("kaiser-response.png")
 /// ```
 ///
 /// See Also

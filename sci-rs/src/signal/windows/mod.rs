@@ -67,6 +67,8 @@ mod general_gaussian;
 mod general_hamming;
 mod hamming;
 mod kaiser;
+#[cfg(feature = "alloc")]
+mod kernels;
 mod nuttall;
 mod triangle;
 pub use blackman::Blackman;
@@ -76,6 +78,8 @@ pub use general_gaussian::GeneralGaussian;
 pub use general_hamming::GeneralHamming;
 pub use hamming::Hamming;
 pub use kaiser::Kaiser;
+#[cfg(feature = "alloc")]
+pub use kernels::*;
 pub use nuttall::Nuttall;
 pub use triangle::Triangle;
 

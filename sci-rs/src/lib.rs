@@ -38,6 +38,9 @@ pub mod stats;
 /// Special math functions
 pub mod special;
 
+/// Trait-first kernel substrate and adapter traits.
+pub mod kernel;
+
 /// Debug plotting
 #[cfg(feature = "plot")]
 pub mod plot;
