@@ -32,6 +32,7 @@ Legend:
 | stats | `MadReduce1D<T>` | yes | yes | yes | `MadKernel` |
 | stats | `ZScoreNormalize1D<T>` | yes | yes | yes | `ZScoreKernel` |
 | stats | `ModZScoreNormalize1D<T>` | yes | yes | yes | `ModZScoreKernel` |
+| linalg | `CompanionBuild1D<T>` | yes | yes | yes | `CompanionKernel` |
 | migration | legacy free functions cleanup | yes | partial | partial | `convolve`/`correlate`/`resample` shimmed |
 | contract | local contract runner (`xtask`) | yes | yes | yes | local-only artifacts under `target/contracts` |
 
@@ -62,6 +63,7 @@ This is the active line-by-line sweep list for remaining public free-function su
 | `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | partial | kernels for `firwin/iirfilter/butter` landed |
 | `signal/wave` | `square` (ndarray N-D) | partial | 1D trait kernel landed; N-D API remains legacy |
 | `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | partial | trait kernels landed; free functions retained as shims |
+| `linalg` | `companion_dyn` | partial | trait kernel landed; legacy free fn retained |
 
 ## Acceptance Gate Tracker
 
