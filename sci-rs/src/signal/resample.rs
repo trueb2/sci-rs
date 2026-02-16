@@ -65,7 +65,7 @@ where
                 got: out_slice.len(),
             });
         }
-        let y = resample(input, self.target_len);
+        let y = resample_impl(input, self.target_len);
         out_slice.copy_from_slice(&y);
         Ok(())
     }
@@ -81,25 +81,11 @@ where
                 reason: "resample input must be non-empty",
             });
         }
-        Ok(resample(input, self.target_len))
+        Ok(resample_impl(input, self.target_len))
     }
 }
 
-///
-/// Resample the data to the desired number of samples using the Fourier transform.
-///
-/// This method is similar but not exactly equivalent to the SciPy method of resampling:
-/// <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.resample.html>
-///
-/// It skips some complexity of the SciPy method, such as windowing and handling odd vs. even-length signals.
-///
-/// Procedure:
-/// 1. Convert to the frequency-domain.
-///    a. If upsampling, pad higher frequency bins with 0
-///    b. If downsampling, truncate higher frequency bins
-/// 2. Convert back to the time-domain.
-///
-pub fn resample<F: Float + FftNum>(x: &[F], n: usize) -> Vec<F> {
+fn resample_impl<F: Float + FftNum>(x: &[F], n: usize) -> Vec<F> {
     if x.is_empty() || n == 0 {
         return Vec::new();
     }
@@ -141,9 +127,30 @@ pub fn resample<F: Float + FftNum>(x: &[F], n: usize) -> Vec<F> {
 
     // Take the scaled real domain as the resampled result
     let scale_factor = F::from(1.0 / x.len() as f64).unwrap();
-    let y = y.iter().map(|x| x.re * scale_factor).collect::<Vec<_>>();
+    y.iter().map(|x| x.re * scale_factor).collect::<Vec<_>>()
+}
 
-    y
+///
+/// Resample the data to the desired number of samples using the Fourier transform.
+///
+/// This method is similar but not exactly equivalent to the SciPy method of resampling:
+/// <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.resample.html>
+///
+/// It skips some complexity of the SciPy method, such as windowing and handling odd vs. even-length signals.
+///
+/// Procedure:
+/// 1. Convert to the frequency-domain.
+///    a. If upsampling, pad higher frequency bins with 0
+///    b. If downsampling, truncate higher frequency bins
+/// 2. Convert back to the time-domain.
+///
+pub fn resample<F: Float + FftNum>(x: &[F], n: usize) -> Vec<F> {
+    if x.is_empty() || n == 0 {
+        return Vec::new();
+    }
+    ResampleKernel { target_len: n }
+        .run_alloc(x)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

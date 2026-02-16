@@ -23,8 +23,20 @@ Legend:
 | design | `FirWinDesign<T>` | yes | yes | yes | `FirWinKernel` with constructor validation |
 | design | `IirDesign<T>` | yes | yes | yes | `IirFilterKernel` and `ButterKernel` |
 | windows | `WindowGenerate<T>` | yes | yes | yes | `WindowKernel` and owned window builder |
-| migration | legacy free functions cleanup | yes | partial | pending | compatibility shim policy active |
+| migration | legacy free functions cleanup | yes | partial | partial | `convolve`/`correlate`/`resample` shimmed |
 | contract | local contract runner (`xtask`) | yes | yes | yes | local-only artifacts under `target/contracts` |
+
+## Legacy Shim Status
+
+| Legacy API | Trait-first replacement | shimmed | tested |
+| --- | --- | --- | --- |
+| `convolve` | `ConvolveKernel` + `Convolve1D` | yes | yes |
+| `correlate` | `CorrelateKernel` + `Correlate1D` | yes | yes |
+| `resample` | `ResampleKernel` + `Resample1D` | yes | yes |
+| `lfilter` | `LFilterKernel` + `LFilter1D` | partial | yes |
+| `filtfilt` | `FiltFiltKernel` + `FiltFilt1D` | partial | yes |
+| `sosfilt` | `SosFiltKernel` + `SosFilt1D` | partial | yes |
+| `sosfiltfilt` | `SosFiltFiltKernel` + `SosFiltFilt1D` | partial | yes |
 
 ## Acceptance Gate Tracker
 

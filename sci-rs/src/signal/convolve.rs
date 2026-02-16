@@ -180,7 +180,7 @@ where
                 got: out_slice.len(),
             });
         }
-        let result = correlate(in1, in2, self.mode);
+        let result = correlate_impl(in1, in2, self.mode);
         out_slice.copy_from_slice(&result);
         Ok(())
     }
@@ -198,8 +198,14 @@ where
                 reason: "correlation requires non-empty inputs",
             });
         }
-        Ok(correlate(in1, in2, self.mode))
+        Ok(correlate_impl(in1, in2, self.mode))
     }
+}
+
+fn correlate_impl<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> Vec<F> {
+    let mut in2_rev = in2.to_vec();
+    in2_rev.reverse();
+    fftconvolve(in1, &in2_rev, mode)
 }
 
 /// Performs FFT-based convolution on two slices of floating point values.
@@ -295,7 +301,10 @@ pub fn convolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> 
     if in1.is_empty() || in2.is_empty() {
         return Vec::new();
     }
-    fftconvolve(in1, in2, mode)
+
+    ConvolveKernel { mode }
+        .run_alloc(in1, in2)
+        .unwrap_or_default()
 }
 
 /// Compute the cross-correlation of two signals using FFT.
@@ -314,10 +323,10 @@ pub fn correlate<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) ->
     if in1.is_empty() || in2.is_empty() {
         return Vec::new();
     }
-    // For correlation, we need to reverse in2
-    let mut in2_rev = in2.to_vec();
-    in2_rev.reverse();
-    fftconvolve(in1, &in2_rev, mode)
+
+    CorrelateKernel { mode }
+        .run_alloc(in1, in2)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
