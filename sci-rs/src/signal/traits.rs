@@ -111,6 +111,34 @@ pub trait FiltFilt1D<T> {
         I: Read1D<T> + ?Sized;
 }
 
+/// `lfilter_zi` design capability.
+pub trait LFilterZiDesign1D<T> {
+    /// Compute initial state into a caller-provided output buffer.
+    fn run_into<O>(&self, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        O: Write1D<T> + ?Sized;
+
+    /// Compute initial state and allocate output.
+    #[cfg(feature = "alloc")]
+    fn run_alloc(&self) -> Result<Vec<T>, ExecInvariantViolation>;
+}
+
+/// `sosfilt_zi` design capability.
+#[cfg(feature = "alloc")]
+pub trait SosFiltZiDesign1D<T>
+where
+    T: nalgebra::RealField + Copy,
+{
+    /// Compute SOS initial states and allocate output sections.
+    fn run_alloc(
+        &self,
+    ) -> Result<Vec<crate::signal::filter::design::Sos<T>>, ExecInvariantViolation>;
+}
+
+/// `sosfilt_zi` design capability in no-alloc mode.
+#[cfg(not(feature = "alloc"))]
+pub trait SosFiltZiDesign1D<T> {}
+
 /// 1D Savitzky-Golay filtering capability.
 pub trait SavgolFilter1D<T> {
     /// Run Savitzky-Golay filtering into a caller-provided output buffer.

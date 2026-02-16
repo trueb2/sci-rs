@@ -1,13 +1,16 @@
 //! Trait-first kernel wrappers for filtering primitives.
 
 use crate::kernel::{ConfigError, ExecInvariantViolation, KernelLifecycle, Read1D, Write1D};
-use crate::signal::traits::{FiltFilt1D, LFilter1D, SavgolFilter1D, SosFilt1D, SosFiltFilt1D};
+use crate::signal::traits::{
+    FiltFilt1D, LFilter1D, LFilterZiDesign1D, SavgolFilter1D, SosFilt1D, SosFiltFilt1D,
+    SosFiltZiDesign1D,
+};
 use alloc::vec::Vec;
 use core::iter::Sum;
-use core::ops::{Add, Sub};
-use nalgebra::RealField;
+use core::ops::{Add, Sub, SubAssign};
+use nalgebra::{RealField, Scalar};
 use ndarray::{Array1, ArrayView1};
-use num_traits::{FromPrimitive, NumAssign, One};
+use num_traits::{FromPrimitive, NumAssign, One, Zero};
 
 use super::design::Sos;
 use super::{FiltFilt, FiltFiltPad, LFilter};
@@ -418,12 +421,127 @@ where
     }
 }
 
+/// Constructor config for [`LFilterZiKernel`].
+#[derive(Debug, Clone)]
+pub struct LFilterZiConfig<T> {
+    /// Numerator coefficients.
+    pub b: Vec<T>,
+    /// Denominator coefficients.
+    pub a: Vec<T>,
+}
+
+/// Trait-first `lfilter_zi` design kernel.
+#[derive(Debug, Clone)]
+pub struct LFilterZiKernel<T> {
+    b: Vec<T>,
+    a: Vec<T>,
+}
+
+impl<T> KernelLifecycle for LFilterZiKernel<T>
+where
+    T: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
+{
+    type Config = LFilterZiConfig<T>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.b.is_empty() {
+            return Err(ConfigError::EmptyInput { arg: "b" });
+        }
+        if config.a.is_empty() {
+            return Err(ConfigError::EmptyInput { arg: "a" });
+        }
+        if config.a.iter().all(|x| *x == T::zero()) {
+            return Err(ConfigError::InvalidArgument {
+                arg: "a",
+                reason: "at least one denominator coefficient must be non-zero",
+            });
+        }
+        Ok(Self {
+            b: config.b,
+            a: config.a,
+        })
+    }
+}
+
+impl<T> LFilterZiDesign1D<T> for LFilterZiKernel<T>
+where
+    T: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
+{
+    fn run_into<O>(&self, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        O: Write1D<T> + ?Sized,
+    {
+        let zi = self.run_alloc()?;
+        let out = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out.len() != zi.len() {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: zi.len(),
+                got: out.len(),
+            });
+        }
+        out.copy_from_slice(&zi);
+        Ok(())
+    }
+
+    fn run_alloc(&self) -> Result<Vec<T>, ExecInvariantViolation> {
+        Ok(super::lfilter_zi_dyn(&self.b, &self.a).to_vec())
+    }
+}
+
+/// Constructor config for [`SosFiltZiKernel`].
+#[derive(Debug, Clone)]
+pub struct SosFiltZiConfig<T>
+where
+    T: RealField + Copy,
+{
+    /// Second-order sections.
+    pub sos: Vec<Sos<T>>,
+}
+
+/// Trait-first `sosfilt_zi` design kernel.
+#[derive(Debug, Clone)]
+pub struct SosFiltZiKernel<T>
+where
+    T: RealField + Copy,
+{
+    sos: Vec<Sos<T>>,
+}
+
+impl<T> KernelLifecycle for SosFiltZiKernel<T>
+where
+    T: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
+{
+    type Config = SosFiltZiConfig<T>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.sos.is_empty() {
+            return Err(ConfigError::EmptyInput { arg: "sos" });
+        }
+        Ok(Self { sos: config.sos })
+    }
+}
+
+impl<T> SosFiltZiDesign1D<T> for SosFiltZiKernel<T>
+where
+    T: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
+{
+    fn run_alloc(&self) -> Result<Vec<Sos<T>>, ExecInvariantViolation> {
+        let mut sos = self.sos.clone();
+        super::sosfilt_zi_dyn::<T, _, Sos<T>>(sos.iter_mut());
+        Ok(sos)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::kernel::ConfigError;
     use crate::signal::filter::{
-        design::Sos, savgol_filter_dyn, sosfilt_dyn, sosfiltfilt_dyn, FiltFiltPad,
+        design::Sos, lfilter_zi_dyn, savgol_filter_dyn, sosfilt_dyn, sosfilt_zi_dyn,
+        sosfiltfilt_dyn, FiltFiltPad,
     };
     use ndarray::Array1;
 
@@ -600,5 +718,82 @@ mod tests {
                 reason: "window_length must be odd and greater than zero",
             }
         );
+    }
+
+    #[test]
+    fn lfilter_zi_kernel_matches_reference_and_validates() {
+        let b = [
+            0.00327922f64,
+            0.01639608,
+            0.03279216,
+            0.03279216,
+            0.01639608,
+            0.00327922,
+        ];
+        let a = [
+            1.0f64,
+            -2.47441617,
+            2.81100631,
+            -1.70377224,
+            0.54443269,
+            -0.07231567,
+        ];
+        let kernel = LFilterZiKernel::try_new(LFilterZiConfig {
+            b: b.to_vec(),
+            a: a.to_vec(),
+        })
+        .expect("kernel should initialize");
+
+        let expected = lfilter_zi_dyn(&b, &a);
+        let actual = kernel.run_alloc().expect("run_alloc");
+        assert_eq!(actual, expected.to_vec());
+
+        let mut too_short = vec![0.0f64; expected.len() - 1];
+        let err = kernel
+            .run_into(&mut too_short)
+            .expect_err("length mismatch should fail");
+        assert!(matches!(
+            err,
+            ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: 5,
+                got: 4
+            }
+        ));
+    }
+
+    #[test]
+    fn sosfilt_zi_kernel_matches_reference() {
+        let sos = Sos::from_scipy_dyn(
+            2,
+            [
+                1.55854712e-07f64,
+                3.11709423e-07,
+                1.55854712e-07,
+                1.00000000e+00,
+                -6.68178638e-01,
+                0.00000000e+00,
+                1.00000000e+00,
+                2.00000000e+00,
+                1.00000000e+00,
+                1.00000000e+00,
+                -1.35904130e+00,
+                4.71015698e-01,
+            ]
+            .to_vec(),
+        );
+        let kernel = SosFiltZiKernel::try_new(SosFiltZiConfig { sos: sos.clone() })
+            .expect("kernel should initialize");
+
+        let actual = kernel.run_alloc().expect("run_alloc");
+        let mut expected = sos;
+        sosfilt_zi_dyn::<f64, _, Sos<f64>>(expected.iter_mut());
+        assert_eq!(actual.len(), expected.len());
+        actual.iter().zip(expected.iter()).for_each(|(a, e)| {
+            assert_eq!(a.b, e.b);
+            assert_eq!(a.a, e.a);
+            assert_eq!(a.zi0, e.zi0);
+            assert_eq!(a.zi1, e.zi1);
+        });
     }
 }
