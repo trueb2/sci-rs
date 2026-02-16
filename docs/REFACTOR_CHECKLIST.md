@@ -2,6 +2,8 @@
 
 This checklist tracks interface migration status for the breaking refactor.
 
+File-by-file traversal status is tracked in `/Users/jacobtrueb/Desktop/workspace/sci-rs/docs/SOURCE_TRAVERSAL.md`.
+
 Legend:
 - `planned`: interface is on the refactor path.
 - `refactored`: trait/config/kernel implementation exists.
