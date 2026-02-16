@@ -1,6 +1,9 @@
 use nalgebra::RealField;
 use ndarray::{Array, ArrayBase, Data, Dimension, RawData};
 
+mod kernels;
+pub use kernels::*;
+
 /// Return a periodic square-wave waveform.
 ///
 /// The square wave has a period ``2*pi``, has value +1 from 0 to

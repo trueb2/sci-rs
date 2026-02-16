@@ -66,6 +66,21 @@ pub trait Resample1D<T> {
         I: Read1D<T> + ?Sized;
 }
 
+/// 1D square-wave generation capability.
+pub trait SquareWave1D<T> {
+    /// Generate a square wave from phase/time input into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Generate a square wave and allocate output.
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
 /// 1D `lfilter` capability.
 pub trait LFilter1D<T> {
     /// Run filtering into a caller-provided output buffer.

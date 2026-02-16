@@ -16,6 +16,7 @@ Legend:
 | signal | `Convolve1D<T>` | yes | yes | yes | `ConvolveKernel` |
 | signal | `Correlate1D<T>` | yes | yes | yes | `CorrelateKernel` |
 | signal | `Resample1D<T>` | yes | yes | yes | `ResampleKernel` |
+| signal | `SquareWave1D<T>` | yes | yes | yes | `SquareWaveKernel` |
 | signal | `SosFilt1D<T>` | yes | yes | yes | `SosFiltKernel` |
 | signal | `SosFiltFilt1D<T>` | yes | yes | yes | kernel parity and invariant tests |
 | signal | `LFilter1D<T>` | yes | yes | yes | reference parity + length checks |
@@ -52,5 +53,5 @@ Legend:
 
 1. Legacy free-function cleanup and quarantine/deprecation policy.
 2. Convert remaining panic-based validation paths into deterministic config errors where feasible.
-3. Add trait-first coverage plan for remaining non-filter signal APIs (`wave`, helper utilities).
+3. Add trait-first coverage for remaining helper utilities (`arraytools`, extension helpers).
 4. Expand allocation/perf assertions for hot paths in benchmark suites.
