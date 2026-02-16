@@ -325,7 +325,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signal::filter::{design::Sos, sosfilt_dyn};
+    use crate::kernel::ConfigError;
+    use crate::signal::filter::{design::Sos, sosfilt_dyn, sosfiltfilt_dyn, FiltFiltPad};
+    use ndarray::Array1;
 
     #[test]
     fn sosfilt_kernel_matches_function() {
@@ -342,5 +344,116 @@ mod tests {
         let mut sos = Sos::from_scipy_dyn(1, vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
         let expected = sosfilt_dyn(x.iter(), &mut sos);
         assert_eq!(y, expected.as_slice());
+    }
+
+    #[test]
+    fn sosfiltfilt_kernel_matches_function() {
+        let kernel = SosFiltFiltKernel::try_new(SosFiltFiltConfig {
+            sos: Sos::from_scipy_dyn(1, vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+        })
+        .expect("kernel should initialize");
+        let x: Vec<f64> = (0..64).map(|i| i as f64).collect();
+
+        let actual = kernel.run_alloc(&x).expect("sosfiltfilt should run");
+        let sos = Sos::from_scipy_dyn(1, vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        let expected = sosfiltfilt_dyn(x.iter(), &sos);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn lfilter_kernel_matches_lfilter_reference_and_length_checks() {
+        let kernel = LFilterKernel::try_new(LFilterConfig {
+            b: vec![0.5f64, 0.5],
+            a: vec![1.0f64],
+            axis: None,
+        })
+        .expect("kernel should initialize");
+
+        let input = [1.0f64, 2.0, 3.0, 4.0];
+        let actual = kernel.run_alloc(&input).expect("lfilter should run");
+
+        let b = Array1::from(vec![0.5f64, 0.5]);
+        let a = Array1::from(vec![1.0f64]);
+        let x = Array1::from(input.to_vec());
+        let (expected, _) = Array1::lfilter(b.view(), a.view(), x, None, None)
+            .expect("reference lfilter should run");
+        assert_eq!(actual, expected.to_vec());
+
+        let mut too_short = vec![0.0f64; input.len() - 1];
+        let err = kernel
+            .run_into(&input, &mut too_short)
+            .expect_err("output size mismatch must fail");
+        assert!(matches!(
+            err,
+            ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: 4,
+                got: 3
+            }
+        ));
+    }
+
+    #[test]
+    fn filtfilt_kernel_matches_reference_and_validates_lengths() {
+        let kernel = FiltFiltKernel::try_new(FiltFiltConfig {
+            b: vec![0.5f64, 0.5],
+            a: vec![1.0f64],
+            axis: None,
+            padding: Some(FiltFiltPad::default()),
+        })
+        .expect("kernel should initialize");
+
+        let input = vec![
+            0.0f64, 0.6389613, 0.890577, 0.9830277, 0.9992535, 0.9756868, 0.9304659, 0.8734051,
+        ];
+        let actual = kernel.run_alloc(&input).expect("filtfilt should run");
+
+        let b = Array1::from(vec![0.5f64, 0.5]);
+        let a = Array1::from(vec![1.0f64]);
+        let x = Array1::from(input.clone());
+        let expected = Array1::filtfilt(b.view(), a.view(), x, None, Some(FiltFiltPad::default()))
+            .expect("reference filtfilt should run");
+        assert_eq!(actual, expected.to_vec());
+
+        let mut too_short = vec![0.0f64; input.len() - 1];
+        let err = kernel
+            .run_into(&input, &mut too_short)
+            .expect_err("output size mismatch must fail");
+        assert!(matches!(
+            err,
+            ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: 8,
+                got: 7
+            }
+        ));
+    }
+
+    #[test]
+    fn constructors_reject_empty_coefficients() {
+        let err = SosFiltKernel::<f64>::try_new(SosFiltConfig { sos: Vec::new() })
+            .expect_err("empty sos must fail");
+        assert_eq!(err, ConfigError::EmptyInput { arg: "sos" });
+
+        let err = SosFiltFiltKernel::<f64>::try_new(SosFiltFiltConfig { sos: Vec::new() })
+            .expect_err("empty sos must fail");
+        assert_eq!(err, ConfigError::EmptyInput { arg: "sos" });
+
+        let err = LFilterKernel::<f64>::try_new(LFilterConfig {
+            b: Vec::new(),
+            a: vec![1.0],
+            axis: None,
+        })
+        .expect_err("empty b must fail");
+        assert_eq!(err, ConfigError::EmptyInput { arg: "b" });
+
+        let err = FiltFiltKernel::<f64>::try_new(FiltFiltConfig {
+            b: vec![1.0],
+            a: Vec::new(),
+            axis: None,
+            padding: None,
+        })
+        .expect_err("empty a must fail");
+        assert_eq!(err, ConfigError::EmptyInput { arg: "a" });
     }
 }

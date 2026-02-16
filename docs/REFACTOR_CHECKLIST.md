@@ -17,9 +17,9 @@ Legend:
 | signal | `Correlate1D<T>` | yes | yes | yes | `CorrelateKernel` |
 | signal | `Resample1D<T>` | yes | yes | yes | `ResampleKernel` |
 | signal | `SosFilt1D<T>` | yes | yes | yes | `SosFiltKernel` |
-| signal | `SosFiltFilt1D<T>` | yes | yes | partial | kernel tests extending |
-| signal | `LFilter1D<T>` | yes | yes | partial | kernel wrappers in place |
-| signal | `FiltFilt1D<T>` | yes | yes | partial | kernel wrappers in place |
+| signal | `SosFiltFilt1D<T>` | yes | yes | yes | kernel parity and invariant tests |
+| signal | `LFilter1D<T>` | yes | yes | yes | reference parity + length checks |
+| signal | `FiltFilt1D<T>` | yes | yes | yes | reference parity + length checks |
 | design | `FirWinDesign<T>` | yes | yes | yes | `FirWinKernel` with constructor validation |
 | design | `IirDesign<T>` | yes | yes | yes | `IirFilterKernel` and `ButterKernel` |
 | windows | `WindowGenerate<T>` | yes | yes | yes | `WindowKernel` and owned window builder |
