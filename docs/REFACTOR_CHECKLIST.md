@@ -11,8 +11,8 @@ Legend:
 | --- | --- | --- | --- | --- | --- |
 | substrate | `Read1D<T>` | yes | yes | yes | slice/array/vec/ndarray adapters |
 | substrate | `Write1D<T>` | yes | yes | yes | slice/array/vec/ndarray adapters |
-| substrate | `SampleStream<T>` | yes | yes | partial | iterator blanket impl present |
-| substrate | `KernelLifecycle` | yes | yes | partial | constructor validation pattern in place |
+| substrate | `SampleStream<T>` | yes | yes | yes | iterator blanket impl + stream tests |
+| substrate | `KernelLifecycle` | yes | yes | yes | constructor contract tests |
 | signal | `Convolve1D<T>` | yes | yes | yes | `ConvolveKernel` |
 | signal | `Correlate1D<T>` | yes | yes | yes | `CorrelateKernel` |
 | signal | `Resample1D<T>` | yes | yes | yes | `ResampleKernel` |
@@ -38,7 +38,7 @@ Legend:
 
 ## Next Interfaces In Flight
 
-1. Finalize concrete trait contracts for design/windows.
-2. Land `firwin`, `iirfilter`, `butter`, and `get_window` kernels with constructor-time validation.
-3. Add adapter-focused tests for design/window kernels.
-4. Expand no-allocation assertions where execution paths support caller buffers.
+1. Legacy free-function cleanup and quarantine/deprecation policy.
+2. Convert remaining panic-based validation paths into deterministic config errors where feasible.
+3. Add trait-first coverage plan for remaining non-filter signal APIs (`wave`, helper utilities).
+4. Expand allocation/perf assertions for hot paths in benchmark suites.

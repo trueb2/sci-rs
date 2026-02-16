@@ -106,7 +106,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{Read1D, Write1D};
+    use super::{Read1D, SampleStream, Write1D};
 
     #[test]
     fn slice_and_array_adapters() {
@@ -123,6 +123,15 @@ mod tests {
         let slice = out.write_slice_mut().expect("vec write adapter");
         slice.copy_from_slice(&[1.0, 2.0, 3.0, 4.0]);
         assert_eq!(out, vec![1.0, 2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn sample_stream_iterator_adapter() {
+        let mut stream = [1u8, 2, 3].into_iter();
+        assert_eq!(stream.next_sample(), Some(1));
+        assert_eq!(stream.next_sample(), Some(2));
+        assert_eq!(stream.next_sample(), Some(3));
+        assert_eq!(stream.next_sample(), None);
     }
 
     #[cfg(feature = "alloc")]
