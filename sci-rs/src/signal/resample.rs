@@ -144,13 +144,13 @@ fn resample_impl<F: Float + FftNum>(x: &[F], n: usize) -> Vec<F> {
 ///    b. If downsampling, truncate higher frequency bins
 /// 2. Convert back to the time-domain.
 ///
-pub fn resample<F: Float + FftNum>(x: &[F], n: usize) -> Vec<F> {
-    if x.is_empty() || n == 0 {
-        return Vec::new();
-    }
-    ResampleKernel { target_len: n }
-        .run_alloc(x)
-        .unwrap_or_default()
+pub(crate) fn resample<F: Float + FftNum>(
+    x: &[F],
+    n: usize,
+) -> Result<Vec<F>, ExecInvariantViolation> {
+    let kernel = ResampleKernel::try_new(ResampleConfig { target_len: n })
+        .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 #[cfg(test)]
@@ -166,7 +166,7 @@ mod tests {
     #[should_panic]
     fn can_resample_like_scipy() {
         let x = vec![1., 2., 3., 4., 5., 6., 7., 8., 9.];
-        let y = resample(&x, 5);
+        let y = resample(&x, 5).expect("resample should succeed");
         let expected = vec![3., 2.18649851, 5.01849831, 5.98150169, 8.81350149];
         assert_eq!(y.len(), expected.len());
 
@@ -187,7 +187,7 @@ mod tests {
         for _ in 0..100 {
             let len = rng.random_range(10..50);
             let x: Vec<_> = (0..len).map(|_| rng.random_range(-100.0..100.)).collect();
-            let y = resample(&x, 100);
+            let y = resample(&x, 100).expect("resample should succeed");
             assert_eq!(y.len(), 100);
         }
 
@@ -195,7 +195,7 @@ mod tests {
             let len = rng.random_range(200..10000);
             let target_len = rng.random_range(50..50000);
             let x: Vec<_> = (0..len).map(|_| rng.random_range(-100.0..100.)).collect();
-            let y = resample(&x, target_len);
+            let y = resample(&x, target_len).expect("resample should succeed");
             assert_eq!(y.len(), target_len);
         }
     }

@@ -19,23 +19,23 @@ use super::{iirfilter_checked, DigitalFilter, FilterBandType, FilterOutputType, 
 /// <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.butter.html>
 ///
 #[cfg(feature = "alloc")]
-pub fn butter_dyn<F>(
+pub(crate) fn butter_dyn<F>(
     order: usize,
     wn: Vec<F>,
     btype: Option<FilterBandType>,
     analog: Option<bool>,
     output: Option<FilterOutputType>,
     fs: Option<F>,
-) -> DigitalFilter<F>
+) -> Result<DigitalFilter<F>, Error>
 where
     F: RealField + Float + Sum,
 {
-    butter_checked(order, wn, btype, analog, output, fs).expect("invalid butter configuration")
+    butter_checked(order, wn, btype, analog, output, fs)
 }
 
 /// Checked Butterworth design entrypoint used by trait-first kernels.
 #[cfg(feature = "alloc")]
-pub fn butter_checked<F>(
+pub(crate) fn butter_checked<F>(
     order: usize,
     wn: Vec<F>,
     btype: Option<FilterBandType>,
@@ -102,7 +102,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Zpk),
             Some(1666.),
-        );
+        )
+        .expect("butter should succeed");
 
         match filter {
             DigitalFilter::Zpk(zpk) => {
@@ -134,7 +135,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Sos),
             Some(1666.),
-        );
+        )
+        .expect("butter should succeed");
 
         match filter {
             DigitalFilter::Sos(sos) => {
@@ -185,7 +187,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Sos),
             Some(600.),
-        );
+        )
+        .expect("butter should succeed");
         // >>> butter(5,[2],btype='hp',output='sos',fs=600)
         // array([[ 0.966679  , -0.966679  ,  0.        ,  1.        , -0.97927235, 0.        ],
         //        [ 1.        , -2.        ,  1.        ,  1.        , -1.96624768, 0.966679  ],
@@ -226,7 +229,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Ba),
             Some(1666.),
-        );
+        )
+        .expect("butter should succeed");
 
         match filter {
             DigitalFilter::Ba(ba) => {

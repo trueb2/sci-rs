@@ -79,7 +79,7 @@ Each migrated capability follows the same structure:
    - `convolve`
    - `correlate`
    - `resample`
-2. Keep legacy free functions as thin compatibility wrappers temporarily.
+2. Do not keep legacy free functions as thin compatibility wrappers.
 
 ## M5: Contract System
 

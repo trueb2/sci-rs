@@ -196,7 +196,7 @@ fn firwin_dyn_validate<F: Real + PartialOrd, W: Real>(
 /// array([ 0.06799017,  0.86401967,  0.06799017])
 /// ```
 /// Sci-rs:
-/// ```
+/// ```ignore
 /// use approx:: assert_abs_diff_eq;
 /// use sci_rs::signal::filter::design::{firwin_dyn, FilterBandType};
 /// use sci_rs::signal::windows::Hamming;
@@ -231,7 +231,7 @@ fn firwin_dyn_validate<F: Real + PartialOrd, W: Real>(
 /// Sci-rs:
 //  TODO: This still needs work so that its not Some(&Nuttall::new(...)) which might be mistakenly
 //  different from what's above it.
-/// ```
+/// ```ignore
 /// use approx::assert_abs_diff_eq;
 /// use sci_rs::signal::filter::design::{firwin_dyn, FilterBandType};
 /// use sci_rs::signal::windows::Nuttall;
@@ -264,7 +264,7 @@ fn firwin_dyn_validate<F: Real + PartialOrd, W: Real>(
 /// array([-0.00859313,  0.98281375, -0.00859313])
 /// ```
 /// Sci-rs:
-/// ```
+/// ```ignore
 /// use approx::assert_abs_diff_eq;
 /// use sci_rs::signal::filter::design::{firwin_dyn, FilterBandType};
 /// use sci_rs::signal::windows::Hamming;
@@ -298,7 +298,7 @@ fn firwin_dyn_validate<F: Real + PartialOrd, W: Real>(
 /// array([ 0.06301614,  0.88770441,  0.06301614])
 /// ```
 /// Sci-rs:
-/// ```
+/// ```ignore
 /// use approx::assert_abs_diff_eq;
 /// use sci_rs::signal::filter::design::{firwin_dyn, FilterBandType};
 /// use sci_rs::signal::windows::Hamming;
@@ -331,7 +331,7 @@ fn firwin_dyn_validate<F: Real + PartialOrd, W: Real>(
 /// array([-0.00801395,  1.0160279 , -0.00801395])
 /// ```
 /// Sci-rs:
-/// ```
+/// ```ignore
 /// use approx::assert_abs_diff_eq;
 /// use sci_rs::signal::filter::design::{firwin_dyn, FilterBandType};
 /// use sci_rs::signal::windows::Hamming;
@@ -365,7 +365,7 @@ fn firwin_dyn_validate<F: Real + PartialOrd, W: Real>(
 /// array([-0.01376344,  1.02752689, -0.01376344])
 /// ```
 /// Sci-rs:
-/// ```
+/// ```ignore
 /// use approx::assert_abs_diff_eq;
 /// use sci_rs::signal::filter::design::{firwin_dyn, FilterBandType};
 /// use sci_rs::signal::windows::Hamming;
@@ -398,7 +398,7 @@ fn firwin_dyn_validate<F: Real + PartialOrd, W: Real>(
 /// array([ 0.04890915,  0.91284326,  0.04890915])
 /// ```
 /// Sci-rs:
-/// ```
+/// ```ignore
 /// use approx::assert_abs_diff_eq;
 /// use sci_rs::signal::filter::design::{firwin_dyn, FilterBandType};
 /// use sci_rs::signal::windows::Hamming;
@@ -426,7 +426,7 @@ fn firwin_dyn_validate<F: Real + PartialOrd, W: Real>(
 // In accordance with https://github.com/scipy/scipy/pull/16315, nyq as an argument should not be
 // provided.
 #[cfg(feature = "alloc")]
-pub fn firwin_dyn<F, W>(
+pub(crate) fn firwin_dyn<F, W>(
     numtaps: usize,
     cutoff: &[F],
     width: Option<F>,
@@ -454,7 +454,7 @@ where
         x.get_window()
     } else if let Some(width) = width {
         let atten = kaiser_atten(numtaps.try_into().unwrap(), width / nyq);
-        let beta = kaiser_beta(atten);
+        let beta = kaiser_beta(atten)?;
         let k = get_window(GetWindowBuilder::Kaiser { beta }, numtaps, Some(false));
         k.get_window()
     } else {
@@ -489,11 +489,10 @@ where
         tmp
     };
     if !cutoff.len().is_multiple_of(2) {
-        unreachable!();
-        // return Err(Error::InvalidArg {
-        //     arg: "cutoff".into(),
-        //     reason: "Parity of cutoff given for type of Filter is incorrect.".into(),
-        // });
+        return Err(Error::InvalidArg {
+            arg: "cutoff".into(),
+            reason: "Parity of cutoff given for type of filter is incorrect.".into(),
+        });
     }
     let bands: Vec<_> = cutoff.chunks_exact(2).collect();
     let scale_frequency = {

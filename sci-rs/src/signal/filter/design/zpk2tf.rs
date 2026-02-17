@@ -41,7 +41,7 @@ use alloc::vec::Vec;
 /// """
 ///
 #[cfg(feature = "alloc")]
-pub fn zpk2tf_dyn<C, F>(order: usize, z: &Vec<C>, p: &Vec<C>, k: F) -> BaFormatFilter<F>
+pub(crate) fn zpk2tf_dyn<C, F>(order: usize, z: &Vec<C>, p: &Vec<C>, k: F) -> BaFormatFilter<F>
 where
     C: ComplexField<RealField = F> + Copy,
     F: Float + RealField,
@@ -98,7 +98,7 @@ where
 
 /// Zeros to polynomial transfer function representation
 #[cfg(feature = "alloc")]
-pub fn poly_dyn<F>(z: &Vec<F>) -> Vec<F>
+pub(crate) fn poly_dyn<F>(z: &Vec<F>) -> Vec<F>
 where
     F: ComplexField,
 {

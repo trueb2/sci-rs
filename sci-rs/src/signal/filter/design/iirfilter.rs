@@ -44,7 +44,7 @@ use alloc::vec::Vec;
 ///
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "alloc")]
-pub fn iirfilter_dyn<F>(
+pub(crate) fn iirfilter_dyn<F>(
     order: usize,
     wn: Vec<F>,
     rp: Option<F>,
@@ -54,18 +54,17 @@ pub fn iirfilter_dyn<F>(
     analog: Option<bool>,
     output: Option<FilterOutputType>,
     fs: Option<F>,
-) -> DigitalFilter<F>
+) -> Result<DigitalFilter<F>, Error>
 where
     F: RealField + Float + Sum,
 {
     iirfilter_checked(order, wn, rp, rs, btype, ftype, analog, output, fs)
-        .expect("invalid iirfilter configuration")
 }
 
 /// Checked IIR design entrypoint used by trait-first kernels.
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "alloc")]
-pub fn iirfilter_checked<F>(
+pub(crate) fn iirfilter_checked<F>(
     order: usize,
     wn: Vec<F>,
     rp: Option<F>,
@@ -266,7 +265,7 @@ where
     Ok(match output {
         FilterOutputType::Zpk => DigitalFilter::Zpk(zpk),
         FilterOutputType::Ba => DigitalFilter::Ba(zpk2tf_dyn(2 * order, &zpk.z, &zpk.p, zpk.k)),
-        FilterOutputType::Sos => DigitalFilter::Sos(zpk2sos_dyn(order, zpk, None, Some(analog))),
+        FilterOutputType::Sos => DigitalFilter::Sos(zpk2sos_dyn(order, zpk, None, Some(analog))?),
     })
 }
 
@@ -309,7 +308,7 @@ where
 /// --------
 /// cheby1 : Filter design function using this prototype
 #[cfg(feature = "alloc")]
-pub fn cheb1ap_dyn<F>(n: usize, rp: F) -> ZpkFormatFilter<F>
+pub(crate) fn cheb1ap_dyn<F>(n: usize, rp: F) -> ZpkFormatFilter<F>
 where
     F: Float + RealField,
 {
@@ -409,7 +408,7 @@ where
 /// 5th-order filter has 3 maxima and 2 minima). Consequently, the DC gain is
 /// unity for odd-order filters, or -rp dB for even-order filters.
 #[cfg(feature = "alloc")]
-pub fn cheby1_dyn<F>(
+pub(crate) fn cheby1_dyn<F>(
     n: usize,
     rp: F,
     wn: Vec<F>,
@@ -417,7 +416,7 @@ pub fn cheby1_dyn<F>(
     analog: Option<bool>,
     output: Option<FilterOutputType>,
     fs: Option<F>,
-) -> DigitalFilter<F>
+) -> Result<DigitalFilter<F>, Error>
 where
     F: RealField + Float + Sum,
 {
@@ -446,7 +445,7 @@ where
 /// --------
 /// cheby2 : Filter design function using this prototype
 #[cfg(feature = "alloc")]
-pub fn cheb2ap_dyn<F>(n: usize, rs: F) -> ZpkFormatFilter<F>
+pub(crate) fn cheb2ap_dyn<F>(n: usize, rs: F) -> ZpkFormatFilter<F>
 where
     F: Float + RealField,
 {
@@ -561,7 +560,7 @@ where
 ///
 /// Type II filters do not roll off as fast as Type I (`cheby1`).
 #[cfg(feature = "alloc")]
-pub fn cheby2_dyn<F>(
+pub(crate) fn cheby2_dyn<F>(
     n: usize,
     rs: F,
     wn: Vec<F>,
@@ -569,7 +568,7 @@ pub fn cheby2_dyn<F>(
     analog: Option<bool>,
     output: Option<FilterOutputType>,
     fs: Option<F>,
-) -> DigitalFilter<F>
+) -> Result<DigitalFilter<F>, Error>
 where
     F: RealField + Float + Sum,
 {
@@ -770,7 +769,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Zpk),
             Some(1666.),
-        );
+        )
+        .expect("iirfilter should succeed");
 
         match filter {
             DigitalFilter::Zpk(zpk) => {
@@ -805,7 +805,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Sos),
             Some(1666.),
-        );
+        )
+        .expect("iirfilter should succeed");
 
         match filter {
             DigitalFilter::Sos(sos) => {
@@ -859,7 +860,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Ba),
             Some(1666.),
-        );
+        )
+        .expect("iirfilter should succeed");
 
         match filter {
             DigitalFilter::Ba(ba) => {
@@ -935,7 +937,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Zpk),
             Some(2003.),
-        );
+        )
+        .expect("iirfilter should succeed");
 
         match filter {
             DigitalFilter::Zpk(zpk) => {
@@ -988,7 +991,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Zpk),
             Some(2003.),
-        );
+        )
+        .expect("iirfilter should succeed");
 
         match filter {
             DigitalFilter::Zpk(zpk) => {

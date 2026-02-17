@@ -53,16 +53,19 @@ use super::{
 /// --------
 /// _cplxpair
 #[cfg(feature = "alloc")]
-pub fn cplxreal_dyn<F>(z: Vec<Complex<F>>, tol: Option<F>) -> (Vec<Complex<F>>, Vec<Complex<F>>)
+pub(crate) fn cplxreal_dyn<F>(z: Vec<Complex<F>>, tol: Option<F>) -> Result<ComplexSplit<F>, Error>
 where
     F: RealField + Float,
 {
-    cplxreal_checked(z, tol).expect("invalid complex root pairing")
+    cplxreal_checked(z, tol)
 }
 
 /// Checked complex-pair splitting helper used by trait-first kernels.
 #[cfg(feature = "alloc")]
-pub fn cplxreal_checked<F>(z: Vec<Complex<F>>, tol: Option<F>) -> Result<ComplexSplit<F>, Error>
+pub(crate) fn cplxreal_checked<F>(
+    z: Vec<Complex<F>>,
+    tol: Option<F>,
+) -> Result<ComplexSplit<F>, Error>
 where
     F: RealField + Float,
 {
@@ -140,7 +143,12 @@ where
         .collect();
 
     // Sort each run by their imaginary parts
-    assert!(run_starts.len() == run_stops.len());
+    if run_starts.len() != run_stops.len() {
+        return Err(Error::InvalidArg {
+            arg: "z".into(),
+            reason: "array contains complex value with no matching conjugate".into(),
+        });
+    }
     for i in 0..run_starts.len() {
         let start = run_starts[i];
         let stop = run_stops[i] + 1;
@@ -192,19 +200,19 @@ where
 }
 
 #[cfg(feature = "alloc")]
-pub fn sort_cplx_dyn<F: ComplexField>(x: &mut [F]) {
+pub(crate) fn sort_cplx_dyn<F: ComplexField>(x: &mut [F]) {
     x.sort_unstable_by(|a, b| {
         match a
             .clone()
             .real()
             .partial_cmp(&b.clone().real())
-            .expect("Reals must be orderable")
+            .unwrap_or(Ordering::Equal)
         {
             Ordering::Equal => a
                 .clone()
                 .imaginary()
                 .partial_cmp(&b.clone().imaginary())
-                .expect("Imaginaries must be orderable"),
+                .unwrap_or(Ordering::Equal),
             Ordering::Less => Ordering::Less,
             Ordering::Greater => Ordering::Greater,
         }
@@ -243,7 +251,7 @@ mod tests {
             Complex::new(1., 0.),
         ];
 
-        let (zc, zr) = cplxreal_dyn(z, None);
+        let (zc, zr) = cplxreal_dyn(z, None).expect("cplxreal should succeed");
 
         assert_eq!(expected_zc.len(), zc.len());
         expected_zc.iter().zip(zc.iter()).for_each(|(e, a)| {
@@ -270,7 +278,7 @@ mod tests {
         ];
         let expected_zr: Vec<Complex<f64>> = Vec::new();
 
-        let (zc, zr) = cplxreal_dyn(z, None);
+        let (zc, zr) = cplxreal_dyn(z, None).expect("cplxreal should succeed");
 
         assert_eq!(expected_zc.len(), zc.len());
         expected_zc.iter().zip(zc.iter()).for_each(|(e, a)| {

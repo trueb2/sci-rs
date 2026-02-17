@@ -4,6 +4,8 @@ use nalgebra::{Complex, ComplexField, RealField};
 use num_traits::{Float, Zero};
 
 #[cfg(feature = "alloc")]
+use crate::error::Error;
+#[cfg(feature = "alloc")]
 use crate::signal::filter::design::cplx::cplxreal_dyn;
 
 #[cfg(feature = "alloc")]
@@ -43,12 +45,12 @@ enum WhichNearestComplex {
 ///     ``(n_sections, 6)``. See `sosfilt` for the SOS filter format
 ///     specification.
 #[cfg(feature = "alloc")]
-pub fn zpk2sos_dyn<F>(
+pub(crate) fn zpk2sos_dyn<F>(
     order: usize,
     zpk: ZpkFormatFilter<F>,
     pairing: Option<ZpkPairing>,
     analog: Option<bool>,
-) -> SosFormatFilter<F>
+) -> Result<SosFormatFilter<F>, Error>
 where
     F: RealField + Float + Sum,
 {
@@ -60,12 +62,15 @@ where
     });
 
     if analog && !matches!(pairing, ZpkPairing::Minimal) {
-        panic!("for analog zpk2sos conversion, pairing must be minimal");
+        return Err(Error::InvalidArg {
+            arg: "pairing".into(),
+            reason: "for analog zpk2sos conversion, pairing must be minimal".into(),
+        });
     }
 
     if zpk.z.is_empty() && zpk.p.is_empty() {
         if !analog {
-            return SosFormatFilter {
+            return Ok(SosFormatFilter {
                 sos: Vec::from_iter(
                     [Sos::new(
                         [zpk.k, F::zero(), F::zero()],
@@ -74,9 +79,9 @@ where
                     .iter()
                     .cloned(),
                 ),
-            };
+            });
         } else {
-            return SosFormatFilter {
+            return Ok(SosFormatFilter {
                 sos: Vec::from_iter(
                     [Sos::new(
                         [F::zero(), F::zero(), zpk.k],
@@ -85,7 +90,7 @@ where
                     .iter()
                     .cloned(),
                 ),
-            };
+            });
         }
     }
 
@@ -115,40 +120,45 @@ where
         n_sections
     } else {
         if p.len() < z.len() {
-            panic!("for analog zpk2sos conversion, must have len(p)>=len(z)");
+            return Err(Error::InvalidArg {
+                arg: "zpk".into(),
+                reason: "for analog zpk2sos conversion, must have len(p)>=len(z)".into(),
+            });
         }
         p.len().div_ceil(2)
     };
 
     // Ensure we have complex conjugate pairs
     // (note that _cplxreal only gives us one element of each complex pair):
-    let (zc, zr) = cplxreal_dyn(z, None);
+    let (zc, zr) = cplxreal_dyn(z, None)?;
     let z: Vec<Complex<F>> = zc.into_iter().chain(zr).collect::<Vec<_>>();
-    let (pc, pr) = cplxreal_dyn(p, None);
+    let (pc, pr) = cplxreal_dyn(p, None)?;
     let p: Vec<Complex<F>> = pc.into_iter().chain(pr).collect::<Vec<_>>();
     let k = zpk.k;
 
-    let idx_worst = if !analog {
-        // digital: "worst" is the closest to the unit circle
-        // np.argmin(np.abs(1 - np.abs(p)))
-        |p: &Vec<Complex<F>>| -> usize {
-            p.iter()
+    let idx_worst = |poles: &Vec<Complex<F>>| -> Result<usize, Error> {
+        if !analog {
+            poles
+                .iter()
                 .enumerate()
                 .map(|(i, pi)| (i, ComplexField::abs(F::one() - pi.abs())))
                 .min_by(|a, b| (a.1).partial_cmp(&b.1).unwrap_or(Ordering::Equal))
                 .map(|(i, _)| i)
-                .expect("Poles must have a min")
-        }
-    } else {
-        // analog: "worst" is the closest to the imaginary axis
-        // np.argmin(np.abs(np.real(p)))
-        |p: &Vec<Complex<F>>| -> usize {
-            p.iter()
+                .ok_or_else(|| Error::InvalidArg {
+                    arg: "poles".into(),
+                    reason: "expected at least one pole for zpk2sos pairing".into(),
+                })
+        } else {
+            poles
+                .iter()
                 .enumerate()
                 .map(|(i, pi)| (i, Float::abs(pi.re)))
                 .min_by(|a, b| (a.1).partial_cmp(&b.1).unwrap_or(Ordering::Equal))
                 .map(|(i, _)| i)
-                .expect("Poles must have a min")
+                .ok_or_else(|| Error::InvalidArg {
+                    arg: "poles".into(),
+                    reason: "expected at least one pole for zpk2sos pairing".into(),
+                })
         }
     };
 
@@ -160,26 +170,26 @@ where
     let mut p = p;
     for si in 0..n_sections {
         // Select the next "worst" pole
-        let p1_idx = idx_worst(&p);
+        let p1_idx = idx_worst(&p)?;
         let p1 = p.remove(p1_idx);
 
         // Pair that pole with a zero
         if p1.im.is_zero() && p.iter().filter(|pi| pi.im.is_zero()).count() == 0 {
             // Special case (1): last remaining real pole
             let sos_si = if matches!(pairing, ZpkPairing::Minimal) {
-                let z1_idx = nearest_real_complex_idx_dyn(&z, p1, WhichNearestComplex::Real);
+                let z1_idx = nearest_real_complex_idx_dyn(&z, p1, WhichNearestComplex::Real)?;
                 let z1 = z.remove(z1_idx);
                 single_zpksos_dyn(
                     vec![z1, Complex::zero()],
                     vec![p1, Complex::zero()],
                     F::one(),
-                )
+                )?
             } else if !z.is_empty() {
-                let z1_idx = nearest_real_complex_idx_dyn(&z, p1, WhichNearestComplex::Real);
+                let z1_idx = nearest_real_complex_idx_dyn(&z, p1, WhichNearestComplex::Real)?;
                 let z1 = z.remove(z1_idx);
-                single_zpksos_dyn(vec![z1], vec![p1], F::one())
+                single_zpksos_dyn(vec![z1], vec![p1], F::one())?
             } else {
-                single_zpksos_dyn(Vec::new(), vec![p1], F::one())
+                single_zpksos_dyn(Vec::new(), vec![p1], F::one())?
             };
             sos.push(sos_si);
         } else if p.len() + 1 == z.len()
@@ -190,9 +200,9 @@ where
             // Special case (2): there's one real pole and one real zero
             // left, and an equal number of poles and zeros to pair up.
             // We *must* pair with a complex zero
-            let z1_idx = nearest_real_complex_idx_dyn(&z, p1, WhichNearestComplex::Complex);
+            let z1_idx = nearest_real_complex_idx_dyn(&z, p1, WhichNearestComplex::Complex)?;
             let z1 = z.remove(z1_idx);
-            let sos_si = single_zpksos_dyn(vec![z1, z1.conj()], vec![p1, p1.conj()], F::one());
+            let sos_si = single_zpksos_dyn(vec![z1, z1.conj()], vec![p1, p1.conj()], F::one())?;
             sos.push(sos_si);
         } else {
             let p2 = if p1.im.is_zero() {
@@ -202,7 +212,7 @@ where
                     .filter(|pi| pi.1.im.is_zero())
                     .collect::<Vec<_>>();
                 let preal = preal_idx.iter().map(|pi| pi.1).cloned().collect::<Vec<_>>();
-                let p2_idx = idx_worst(&preal);
+                let p2_idx = idx_worst(&preal)?;
                 let p2_idx = preal_idx[p2_idx].0;
                 drop(preal_idx);
                 p.remove(p2_idx)
@@ -212,24 +222,24 @@ where
 
             // Find closest zero
             if !z.is_empty() {
-                let z1_idx = nearest_real_complex_idx_dyn(&z, p1, WhichNearestComplex::Any);
+                let z1_idx = nearest_real_complex_idx_dyn(&z, p1, WhichNearestComplex::Any)?;
                 let z1 = z.remove(z1_idx);
 
                 if !z1.im.is_zero() {
-                    let sos_si = single_zpksos_dyn(vec![z1, z1.conj()], vec![p1, p2], F::one());
+                    let sos_si = single_zpksos_dyn(vec![z1, z1.conj()], vec![p1, p2], F::one())?;
                     sos.push(sos_si);
                 } else if !z.is_empty() {
-                    let z2_idx = nearest_real_complex_idx_dyn(&z, p1, WhichNearestComplex::Real);
+                    let z2_idx = nearest_real_complex_idx_dyn(&z, p1, WhichNearestComplex::Real)?;
                     let z2 = z.remove(z2_idx);
                     assert!(z2.im.is_zero());
-                    let sos_si = single_zpksos_dyn(vec![z1, z2], vec![p1, p2], F::one());
+                    let sos_si = single_zpksos_dyn(vec![z1, z2], vec![p1, p2], F::one())?;
                     sos.push(sos_si);
                 } else {
-                    let sos_si = single_zpksos_dyn(vec![z1], vec![p1, p2], F::one());
+                    let sos_si = single_zpksos_dyn(vec![z1], vec![p1, p2], F::one())?;
                     sos.push(sos_si);
                 }
             } else {
-                let sos_si = single_zpksos_dyn(vec![], vec![p1, p2], F::one());
+                let sos_si = single_zpksos_dyn(vec![], vec![p1, p2], F::one())?;
                 sos.push(sos_si);
             }
         }
@@ -238,15 +248,23 @@ where
     // Reverse so the "worst" are last
     sos.reverse();
 
-    assert!(p.len() == z.len());
-    assert!(p.is_empty());
+    if p.len() != z.len() || !p.is_empty() {
+        return Err(Error::InvalidArg {
+            arg: "zpk".into(),
+            reason: "zpk2sos internal pairing left unmatched poles/zeros".into(),
+        });
+    }
 
     // Put the gain in the first sos
-    for bi in sos[0].b.iter_mut() {
+    let first = sos.first_mut().ok_or_else(|| Error::InvalidArg {
+        arg: "zpk".into(),
+        reason: "zpk2sos could not generate sections".into(),
+    })?;
+    for bi in first.b.iter_mut() {
         *bi *= zpk.k;
     }
 
-    SosFormatFilter { sos }
+    Ok(SosFormatFilter { sos })
 }
 
 /// """Get the next closest real or complex element based on distance"""
@@ -255,7 +273,7 @@ fn nearest_real_complex_idx_dyn<F>(
     fro: &[Complex<F>],
     to: Complex<F>,
     which: WhichNearestComplex,
-) -> usize
+) -> Result<usize, Error>
 where
     F: Float + RealField,
 {
@@ -265,32 +283,47 @@ where
             .filter(|ai| ai.1 .1.im.is_zero())
             .min_by(|a, b| a.1 .0.partial_cmp(&b.1 .0).unwrap_or(Ordering::Equal))
             .map(|a| a.0)
-            .expect("Min must exist"),
+            .ok_or_else(|| Error::InvalidArg {
+                arg: "zpk".into(),
+                reason: "no real-valued candidate found during zpk2sos pairing".into(),
+            }),
         WhichNearestComplex::Complex => order
             .filter(|ai| !ai.1 .1.im.is_zero())
             .min_by(|a, b| a.1 .0.partial_cmp(&b.1 .0).unwrap_or(Ordering::Equal))
             .map(|a| a.0)
-            .expect("Min must exist"),
+            .ok_or_else(|| Error::InvalidArg {
+                arg: "zpk".into(),
+                reason: "no complex-valued candidate found during zpk2sos pairing".into(),
+            }),
         WhichNearestComplex::Any => order
             .min_by(|a, b| a.1 .0.partial_cmp(&b.1 .0).unwrap_or(Ordering::Equal))
             .map(|a| a.0)
-            .expect("Min must exist"),
+            .ok_or_else(|| Error::InvalidArg {
+                arg: "zpk".into(),
+                reason: "no candidate found during zpk2sos pairing".into(),
+            }),
     }
 }
 
 /// """Create one second-order section from up to two zeros and poles"""
 #[cfg(feature = "alloc")]
-fn single_zpksos_dyn<F>(z: Vec<Complex<F>>, p: Vec<Complex<F>>, k: F) -> Sos<F>
+fn single_zpksos_dyn<F>(z: Vec<Complex<F>>, p: Vec<Complex<F>>, k: F) -> Result<Sos<F>, Error>
 where
     F: Float + RealField,
 {
     let ba: BaFormatFilter<F> = zpk2tf_dyn(2, &z, &p, k);
     if ba.b.len() != 3 || ba.a.len() != 3 {
-        panic!(
-            "SOS must have 3 coefficients has {} and {}",
-            ba.b.len(),
-            ba.a.len()
-        );
+        return Err(Error::InvalidArg {
+            arg: "zpk".into(),
+            reason: alloc::format!(
+                "SOS must have 3 coefficients has {} and {}",
+                ba.b.len(),
+                ba.a.len()
+            ),
+        });
     }
-    Sos::new([ba.b[0], ba.b[1], ba.b[2]], [ba.a[0], ba.a[1], ba.a[2]])
+    Ok(Sos::new(
+        [ba.b[0], ba.b[1], ba.b[2]],
+        [ba.a[0], ba.a[1], ba.a[2]],
+    ))
 }

@@ -36,10 +36,13 @@ Status legend:
 | --- | --- | --- |
 | `sci-rs/src/signal/mod.rs` | partial | mixed legacy exports with trait-first kernels |
 | `sci-rs/src/signal/traits.rs` | refactored | signal trait-first contract surface |
-| `sci-rs/src/signal/convolve.rs` | refactored | kernel-first + legacy shim routing |
-| `sci-rs/src/signal/resample.rs` | refactored | kernel-first + legacy shim routing |
-| `sci-rs/src/signal/wave/mod.rs` | refactored | `square`/`sawtooth`/`chirp` route through waveform kernels; 1D `unit_impulse` shim added |
-| `sci-rs/src/signal/wave/kernels.rs` | refactored | waveform kernels: `SquareWaveKernel`, `SawtoothWaveKernel`, `ChirpKernel`, `UnitImpulseKernel` |
+| `sci-rs/src/signal/convolve.rs` | refactored | trait-first `ConvolveKernel` / `CorrelateKernel`; public API is trait/config/kernel |
+| `sci-rs/src/signal/resample.rs` | refactored | trait-first `ResampleKernel`; public API is trait/config/kernel |
+| `sci-rs/src/signal/multirate.rs` | refactored | trait-first `UpFirDnKernel` / `ResamplePolyKernel` / `DecimateKernel` |
+| `sci-rs/src/signal/peak.rs` | refactored | trait-first extrema/peak/prominence/width/CWT kernels |
+| `sci-rs/src/signal/spectral.rs` | refactored | trait-first spectral kernels for periodogram/Welch/CSD/coherence/STFT/ISTFT/spectrogram/freqz/sosfreqz |
+| `sci-rs/src/signal/wave/mod.rs` | refactored | waveform generation executes through `SquareWaveKernel` / `SawtoothWaveKernel` / `ChirpKernel` / `GaussPulseKernel` / `SweepPolyKernel` / `UnitImpulseKernel` |
+| `sci-rs/src/signal/wave/kernels.rs` | refactored | waveform kernels: `SquareWaveKernel`, `SawtoothWaveKernel`, `ChirpKernel`, `GaussPulseKernel`, `SweepPolyKernel`, `UnitImpulseKernel` |
 
 ## sci-rs/src/signal/windows
 
@@ -63,13 +66,13 @@ Status legend:
 | --- | --- | --- |
 | `sci-rs/src/signal/filter/mod.rs` | partial | mixed exports |
 | `sci-rs/src/signal/filter/kernels.rs` | refactored | main filtering kernels and zi/savgol kernels |
-| `sci-rs/src/signal/filter/lfilter.rs` | partial | free-function shim has kernel-first 1D fast path |
-| `sci-rs/src/signal/filter/filtfilt.rs` | partial | added kernel-backed `filtfilt_dyn` compatibility wrapper |
-| `sci-rs/src/signal/filter/sosfilt.rs` | partial | checked wrappers (`sosfilt_checked`, `sosfilt_item_checked`) |
-| `sci-rs/src/signal/filter/sosfiltfilt.rs` | partial | legacy free function still primary |
-| `sci-rs/src/signal/filter/lfilter_zi.rs` | partial | checked wrapper (`lfilter_zi_checked`) + kernel path |
-| `sci-rs/src/signal/filter/sosfilt_zi.rs` | partial | checked wrapper (`sosfilt_zi_checked`) + kernel path |
-| `sci-rs/src/signal/filter/savgol_filter.rs` | partial | checked wrappers + trait kernels for filter/coeff design |
+| `sci-rs/src/signal/filter/lfilter.rs` | partial | trait-first `LFilterKernel`; internal checked helpers remain `pub(crate)` |
+| `sci-rs/src/signal/filter/filtfilt.rs` | partial | trait-first `FiltFiltKernel`; internal checked helpers remain `pub(crate)` |
+| `sci-rs/src/signal/filter/sosfilt.rs` | partial | trait-first `SosFiltKernel`; internal checked helpers remain `pub(crate)` |
+| `sci-rs/src/signal/filter/sosfiltfilt.rs` | partial | trait-first `SosFiltFiltKernel`; internal checked helpers remain `pub(crate)` |
+| `sci-rs/src/signal/filter/lfilter_zi.rs` | partial | trait-first `LFilterZiKernel`; internal checked helpers remain `pub(crate)` |
+| `sci-rs/src/signal/filter/sosfilt_zi.rs` | partial | trait-first `SosFiltZiKernel`; internal checked helpers remain `pub(crate)` |
+| `sci-rs/src/signal/filter/savgol_filter.rs` | partial | trait-first `SavgolFilterKernel` / `SavgolCoeffsKernel`; internal checked helpers remain `pub(crate)` |
 | `sci-rs/src/signal/filter/ext.rs` | partial | moved to checked `Result` API for pad/odd extension; no trait kernel yet |
 | `sci-rs/src/signal/filter/arraytools.rs` | partial | checked `AxisSliceKernel`/`AxisReverseKernel` landed; legacy helpers retained |
 
@@ -79,22 +82,22 @@ Status legend:
 | --- | --- | --- |
 | `sci-rs/src/signal/filter/design/mod.rs` | partial | mixed exports + kernel exports |
 | `sci-rs/src/signal/filter/design/kernels.rs` | refactored | trait-first kernels for `firwin/iirfilter/butter` + zpk helpers; checked execution routing |
-| `sci-rs/src/signal/filter/design/firwin.rs` | partial | legacy function retained |
-| `sci-rs/src/signal/filter/design/iirfilter.rs` | partial | checked `iirfilter_checked` added; `iirfilter_dyn` is compatibility wrapper |
-| `sci-rs/src/signal/filter/design/butter.rs` | partial | checked `butter_checked` added; `butter_dyn` is compatibility wrapper |
+| `sci-rs/src/signal/filter/design/firwin.rs` | partial | trait-first `FirWinKernel`; internal execution helpers are `pub(crate)` |
+| `sci-rs/src/signal/filter/design/iirfilter.rs` | partial | trait-first `IirFilterKernel`; internal execution helpers are `pub(crate)` |
+| `sci-rs/src/signal/filter/design/butter.rs` | partial | trait-first `ButterKernel`; internal execution helpers are `pub(crate)` |
 | `sci-rs/src/signal/filter/design/filter_output.rs` | support | model types |
 | `sci-rs/src/signal/filter/design/filter_type.rs` | support | enum types |
 | `sci-rs/src/signal/filter/design/sos.rs` | support | SOS representation |
 | `sci-rs/src/signal/filter/design/kaiser.rs` | partial | legacy helpers |
-| `sci-rs/src/signal/filter/design/bilinear_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/bilinear_zpk.rs` | partial | validated kernel path landed; helpers are internal (`pub(crate)`) |
 | `sci-rs/src/signal/filter/design/cplx.rs` | partial | checked `cplxreal_checked` added; kernel uses checked path |
-| `sci-rs/src/signal/filter/design/lp2bp_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
-| `sci-rs/src/signal/filter/design/lp2bs_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
-| `sci-rs/src/signal/filter/design/lp2hp_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
-| `sci-rs/src/signal/filter/design/lp2lp_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/lp2bp_zpk.rs` | partial | validated kernel path landed; helpers are internal (`pub(crate)`) |
+| `sci-rs/src/signal/filter/design/lp2bs_zpk.rs` | partial | validated kernel path landed; helpers are internal (`pub(crate)`) |
+| `sci-rs/src/signal/filter/design/lp2hp_zpk.rs` | partial | validated kernel path landed; helpers are internal (`pub(crate)`) |
+| `sci-rs/src/signal/filter/design/lp2lp_zpk.rs` | partial | validated kernel path landed; helpers are internal (`pub(crate)`) |
 | `sci-rs/src/signal/filter/design/relative_degree.rs` | partial | checked `relative_degree_checked` added; kernel uses checked path |
-| `sci-rs/src/signal/filter/design/zpk2sos.rs` | partial | legacy helper retained; validated kernel wrapper landed |
-| `sci-rs/src/signal/filter/design/zpk2tf.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/zpk2sos.rs` | partial | validated kernel path landed; helpers are internal (`pub(crate)`) |
+| `sci-rs/src/signal/filter/design/zpk2tf.rs` | partial | validated kernel path landed; helpers are internal (`pub(crate)`) |
 
 ## sci-rs-core/src
 

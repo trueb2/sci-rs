@@ -25,7 +25,7 @@ use alloc::vec::Vec;
 /// `sos` holds the `zf` return value from scipy, so reusing a `sos` reference
 /// from a previous iteration achieves the same result as passing `zi` in the scipy interface
 ///
-pub fn sosfilt_dyn<YI, F>(y: YI, sos: &mut [Sos<F>]) -> Vec<F>
+pub(crate) fn sosfilt_dyn<YI, F>(y: YI, sos: &mut [Sos<F>]) -> Vec<F>
 where
     F: RealField + Copy,
     YI: IntoIterator,
@@ -174,11 +174,9 @@ where
 ///
 /// Checked SOS filtering entrypoint.
 ///
-pub fn sosfilt_checked<YI, F>(y: YI, sos: &mut [Sos<F>]) -> Result<Vec<F>>
+pub(crate) fn sosfilt_checked_slice<F>(y: &[F], sos: &mut [Sos<F>]) -> Result<Vec<F>>
 where
     F: RealField + Copy,
-    YI: IntoIterator,
-    YI::Item: Borrow<F>,
 {
     if sos.is_empty() {
         return Err(Error::InvalidArg {
@@ -186,7 +184,20 @@ where
             reason: "sos must be non-empty.".into(),
         });
     }
-    Ok(sosfilt_dyn(y, sos))
+    Ok(sosfilt_dyn(y.iter(), sos))
+}
+
+///
+/// Checked SOS filtering entrypoint.
+///
+pub(crate) fn sosfilt_checked<YI, F>(y: YI, sos: &mut [Sos<F>]) -> Result<Vec<F>>
+where
+    F: RealField + Copy,
+    YI: IntoIterator,
+    YI::Item: Borrow<F>,
+{
+    let y = y.into_iter().map(|yi| *yi.borrow()).collect::<Vec<_>>();
+    sosfilt_checked_slice(&y, sos)
 }
 
 ///
@@ -197,7 +208,7 @@ where
 /// This is nearly always slower for long iterators than `sosfilt_dyn` due to
 /// the overhead of the `sos` slice iteration and lack of pipelining.
 ///
-pub fn sosfilt_st<'it, YI, F>(y: YI, sos: &'it mut [Sos<F>]) -> impl Iterator<Item = F> + 'it
+pub(crate) fn sosfilt_st<'it, YI, F>(y: YI, sos: &'it mut [Sos<F>]) -> impl Iterator<Item = F> + 'it
 where
     F: RealField + Copy,
     YI: IntoIterator + 'it,
@@ -215,7 +226,7 @@ where
 /// the `sos` slice iteration and lack of pipelining.
 ///
 #[inline(always)]
-pub fn sosfilt_item<F, B>(y: B, sos: &mut [Sos<F>]) -> F
+pub(crate) fn sosfilt_item<F, B>(y: B, sos: &mut [Sos<F>]) -> F
 where
     F: RealField + Copy,
     B: Borrow<F>,
@@ -231,7 +242,7 @@ where
 ///
 /// Checked single-sample SOS filtering entrypoint.
 ///
-pub fn sosfilt_item_checked<F, B>(y: B, sos: &mut [Sos<F>]) -> Result<F>
+pub(crate) fn sosfilt_item_checked<F, B>(y: B, sos: &mut [Sos<F>]) -> Result<F>
 where
     F: RealField + Copy,
     B: Borrow<F>,
@@ -257,7 +268,8 @@ fn biquad_fold(yi: f32, sos: &mut Sos32) -> f32 {
 
 fn _sosfilt32(y: &[f32], sos: &mut [Sos32], z: &mut [f32]) {
     if y.len() != z.len() {
-        panic!();
+        debug_assert_eq!(y.len(), z.len());
+        return;
     }
     if y.is_empty() {
         return;
@@ -352,7 +364,8 @@ fn _sosfilt32(y: &[f32], sos: &mut [Sos32], z: &mut [f32]) {
 
 fn _sosfilt_isize_32<I: Copy + Into<isize>>(y: &[I], sos: &mut [Sos32], z: &mut [f32]) {
     if y.len() != z.len() {
-        panic!();
+        debug_assert_eq!(y.len(), z.len());
+        return;
     }
     if y.is_empty() {
         return;
@@ -454,7 +467,7 @@ fn _sosfilt_isize_32<I: Copy + Into<isize>>(y: &[I], sos: &mut [Sos32], z: &mut 
 ///  * Double-sided 4th order filters are accelerated
 ///     * Example: 4th order bandpass Butterworth
 ///
-pub fn sosfilt_fast32_st(y: &[f32], sos: &mut [Sos32], z: &mut [f32]) {
+pub(crate) fn sosfilt_fast32_st(y: &[f32], sos: &mut [Sos32], z: &mut [f32]) {
     _sosfilt32(y, sos, z);
 }
 
@@ -468,7 +481,7 @@ pub fn sosfilt_fast32_st(y: &[f32], sos: &mut [Sos32], z: &mut [f32]) {
 ///  * Double-sided 4th order filters are accelerated
 ///     * Example: 4th order bandpass Butterworth
 ///
-pub fn sosfilt_ifast32_st<I>(y: &[I], sos: &mut [Sos32], z: &mut [f32])
+pub(crate) fn sosfilt_ifast32_st<I>(y: &[I], sos: &mut [Sos32], z: &mut [f32])
 where
     I: Into<isize> + Copy,
 {

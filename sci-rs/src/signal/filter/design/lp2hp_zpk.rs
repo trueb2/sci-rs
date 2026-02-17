@@ -68,7 +68,7 @@ use alloc::vec::Vec;
 ///>>> plt.xlabel('Frequency [rad/s]')
 ///>>> plt.ylabel('Magnitude \[dB\]')
 ///>>> plt.legend()
-pub fn lp2hp_zpk_dyn<F>(zpk: ZpkFormatFilter<F>, wo: Option<F>) -> ZpkFormatFilter<F>
+pub(crate) fn lp2hp_zpk_dyn<F>(zpk: ZpkFormatFilter<F>, wo: Option<F>) -> ZpkFormatFilter<F>
 where
     F: RealField + Float,
 {

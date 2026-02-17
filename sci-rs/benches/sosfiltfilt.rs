@@ -1,9 +1,14 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use dasp_signal::{rate, Signal};
+use sci_rs::kernel::KernelLifecycle;
 use sci_rs::signal::filter::{
-    design::{butter_dyn, DigitalFilter, FilterBandType, FilterOutputType, Sos, SosFormatFilter},
-    sosfiltfilt_dyn,
+    design::{
+        ButterConfig, ButterKernel, DigitalFilter, FilterBandType, FilterOutputType, Sos,
+        SosFormatFilter,
+    },
+    SosFiltFiltConfig, SosFiltFiltKernel,
 };
+use sci_rs::signal::traits::{IirDesign, SosFiltFilt1D};
 
 /// TLDR: 4.6x faster
 
@@ -49,6 +54,7 @@ fn butter_sosfiltfilt_100x(c: &mut Criterion) {
         0.9799894886973378,
     ];
     let sos = Sos::from_scipy_dyn(4, filter.to_vec());
+    let kernel = SosFiltFiltKernel::try_new(SosFiltFiltConfig { sos }).expect("valid sos config");
 
     // A signal with a frequency that we can recover
     let sample_hz = 1666.;
@@ -62,7 +68,8 @@ fn butter_sosfiltfilt_100x(c: &mut Criterion) {
     c.bench_function("sosfiltfilt_100x", |b| {
         b.iter(|| {
             black_box(
-                sosfiltfilt_dyn(sin_wave.iter(), &sos)
+                kernel
+                    .run_alloc(sin_wave.as_slice())
                     .expect("benchmark input should satisfy sosfiltfilt preconditions"),
             );
         });
@@ -71,16 +78,22 @@ fn butter_sosfiltfilt_100x(c: &mut Criterion) {
 
 fn butter_sosfiltfilt_100x_10th(c: &mut Criterion) {
     // 10th order butterworth bandpass 10 to 50 at 1666Hz
-    let DigitalFilter::Sos(SosFormatFilter { sos }) = butter_dyn(
-        10,
-        vec![10.0, 50.0],
-        Some(FilterBandType::Bandpass),
-        Some(false),
-        Some(FilterOutputType::Sos),
-        Some(1666.),
-    ) else {
+    let butter_kernel = ButterKernel::try_new(ButterConfig {
+        order: 10,
+        wn: vec![10.0, 50.0],
+        btype: Some(FilterBandType::Bandpass),
+        analog: Some(false),
+        output: Some(FilterOutputType::Sos),
+        fs: Some(1666.0),
+    })
+    .expect("butter kernel config should be valid");
+    let DigitalFilter::Sos(SosFormatFilter { sos }) = butter_kernel
+        .run_alloc()
+        .expect("butter kernel should produce SOS output")
+    else {
         panic!();
     };
+    let kernel = SosFiltFiltKernel::try_new(SosFiltFiltConfig { sos }).expect("valid sos config");
 
     // A signal with a frequency that we can recover
     let sample_hz = 1666.;
@@ -94,7 +107,8 @@ fn butter_sosfiltfilt_100x_10th(c: &mut Criterion) {
     c.bench_function("sosfiltfilt_100x_10th", |b| {
         b.iter(|| {
             black_box(
-                sosfiltfilt_dyn(sin_wave.iter(), &sos)
+                kernel
+                    .run_alloc(sin_wave.as_slice())
                     .expect("benchmark input should satisfy sosfiltfilt preconditions"),
             );
         });
@@ -130,6 +144,7 @@ fn butter_sosfiltfilt_10x(c: &mut Criterion) {
         0.9799894886973378,
     ];
     let sos = Sos::from_scipy_dyn(4, filter.to_vec());
+    let kernel = SosFiltFiltKernel::try_new(SosFiltFiltConfig { sos }).expect("valid sos config");
 
     // A signal with a frequency that we can recover
     let sample_hz = 1666.;
@@ -143,7 +158,8 @@ fn butter_sosfiltfilt_10x(c: &mut Criterion) {
     c.bench_function("sosfiltfilt_10x", |b| {
         b.iter(|| {
             black_box(
-                sosfiltfilt_dyn(sin_wave.iter(), &sos)
+                kernel
+                    .run_alloc(sin_wave.as_slice())
                     .expect("benchmark input should satisfy sosfiltfilt preconditions"),
             );
         });
@@ -179,6 +195,7 @@ fn butter_sosfiltfilt_f64(c: &mut Criterion) {
         0.9799894886973378,
     ];
     let sos = Sos::from_scipy_dyn(4, filter.to_vec());
+    let kernel = SosFiltFiltKernel::try_new(SosFiltFiltConfig { sos }).expect("valid sos config");
 
     // A signal with a frequency that we can recover
     let sample_hz = 1666.;
@@ -191,7 +208,8 @@ fn butter_sosfiltfilt_f64(c: &mut Criterion) {
     c.bench_function("sosfiltfilt_f64", |b| {
         b.iter(|| {
             black_box(
-                sosfiltfilt_dyn(sin_wave.iter(), &sos)
+                kernel
+                    .run_alloc(sin_wave.as_slice())
                     .expect("benchmark input should satisfy sosfiltfilt preconditions"),
             );
         });
@@ -227,6 +245,7 @@ fn butter_sosfiltfilt_f32(c: &mut Criterion) {
         0.979_989_47,
     ];
     let sos = Sos::from_scipy_dyn(4, filter.to_vec());
+    let kernel = SosFiltFiltKernel::try_new(SosFiltFiltConfig { sos }).expect("valid sos config");
 
     // A signal with a frequency that we can recover
     let sample_hz = 1666.;
@@ -239,7 +258,8 @@ fn butter_sosfiltfilt_f32(c: &mut Criterion) {
     c.bench_function("sosfiltfilt_f32", |b| {
         b.iter(|| {
             black_box(
-                sosfiltfilt_dyn(sin_wave.iter(), &sos)
+                kernel
+                    .run_alloc(sin_wave.as_slice())
                     .expect("benchmark input should satisfy sosfiltfilt preconditions"),
             );
         });

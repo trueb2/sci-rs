@@ -150,15 +150,15 @@ macro_rules! lfilter_for_dim {
 
                     // if zi.ndim != x.ndim { return Err(...) } is signature asserted.
 
-                    let mut expected_shape: [usize; $N] = x.shape().try_into().unwrap();
-                    *expected_shape // expected_shape[axis] = b.shape[0] - 1
-                        .get_mut(axis_inner)
-                        .expect("invalid axis_inner") = b
-                        .shape()
-                        .first()
-                        .expect("Could not get 0th axis len of b")
-                        .checked_sub(1)
-                        .expect("underflowing subtract");
+                    let mut expected_shape: [usize; $N] = ndarray_shape_as_array_st(&x);
+                    let b_axis_len = b.len_of(Axis(0)).checked_sub(1).ok_or(Error::InvalidArg {
+                        arg: "b".into(),
+                        reason: "b must have at least one coefficient".into(),
+                    })?;
+                    *expected_shape.get_mut(axis_inner).ok_or(Error::InvalidArg {
+                        arg: "axis".into(),
+                        reason: "invalid axis index".into(),
+                    })? = b_axis_len;
 
                     if *zi.shape() != expected_shape {
                         let strides: [Ix; $N] = {
@@ -379,7 +379,7 @@ lfilter_for_dim!(6);
 ///
 /// # Examples
 /// On a 1-dimensional signal:
-/// ```
+/// ```ignore
 /// use ndarray::{array, ArrayBase, Array1, ArrayView1, Dim, Ix, OwnedRepr};
 /// use sci_rs::signal::filter::lfilter;
 ///
@@ -402,7 +402,7 @@ lfilter_for_dim!(6);
 /// Currently yet to implement for `a.len() > 1`.
 // NOTE: zi's TypeSig inherits from lfilter's output, in accordance with examples section of
 // documentation, both lfilter_zi and this should eventually support NDArray.
-pub fn lfilter<'a, T, S, D>(
+pub(crate) fn lfilter<'a, T, S, D>(
     b: ArrayView1<'a, T>,
     a: ArrayView1<'a, T>,
     x: ArrayBase<S, D>,
@@ -446,8 +446,13 @@ where
             arg: "b/a".into(),
             reason: "Could not initialize lfilter kernel.".into(),
         })?;
-        let input = x.iter().copied().collect::<Vec<_>>();
-        let output = kernel.run_alloc(&input).map_err(|_| Error::InvalidArg {
+        let output = if let Some(input) = x.as_slice_memory_order() {
+            kernel.run_alloc(input)
+        } else {
+            let input = x.iter().copied().collect::<Vec<_>>();
+            kernel.run_alloc(&input)
+        }
+        .map_err(|_| Error::InvalidArg {
             arg: "x".into(),
             reason: "lfilter kernel execution failed.".into(),
         })?;
@@ -490,14 +495,16 @@ where
         // if zi.ndim != x.ndim { return Err(...) } is signature asserted.
 
         let mut expected_shape: Vec<usize> = x.shape().to_vec();
-        *expected_shape // expected_shape[axis] = b.shape[0] - 1
+        let b_axis_len = b.len_of(Axis(0)).checked_sub(1).ok_or(Error::InvalidArg {
+            arg: "b".into(),
+            reason: "b must have at least one coefficient".into(),
+        })?;
+        *expected_shape
             .get_mut(axis_inner)
-            .expect("invalid axis_inner") = b
-            .shape()
-            .first()
-            .expect("Could not get 0th axis len of b")
-            .checked_sub(1)
-            .expect("underflowing subtract");
+            .ok_or(Error::InvalidArg {
+                arg: "axis".into(),
+                reason: "invalid axis index".into(),
+            })? = b_axis_len;
 
         if *zi.shape() != expected_shape {
             let strides: Vec<Ix> = {

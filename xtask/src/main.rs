@@ -1,42 +1,32 @@
 use anyhow::{anyhow, bail, Context, Result};
-use ndarray::Array1;
 use sci_rs::kernel::KernelLifecycle;
 use sci_rs::linalg::{companion_dyn, CompanionBuild1D, CompanionConfig, CompanionKernel};
 use sci_rs::signal::convolve::{
-    convolve as convolve_baseline, correlate as correlate_baseline, ConvolveConfig, ConvolveKernel,
-    ConvolveMode, CorrelateConfig, CorrelateKernel,
+    ConvolveConfig, ConvolveKernel, ConvolveMode, CorrelateConfig, CorrelateKernel,
 };
 use sci_rs::signal::filter::design::{
-    butter_dyn as butter_baseline, firwin_dyn as firwin_baseline,
-    iirfilter_dyn as iirfilter_baseline, ButterConfig, ButterKernel, DigitalFilter, FilterBandType,
-    FilterOutputType, FilterType, FirWinConfig, FirWinKernel, IirFilterConfig, IirFilterKernel,
-    Sos,
+    ButterConfig, ButterKernel, DigitalFilter, FilterBandType, FilterOutputType, FilterType,
+    FirWinConfig, FirWinKernel, IirFilterConfig, IirFilterKernel, Sos,
 };
 use sci_rs::signal::filter::{
-    filtfilt_dyn as filtfilt_baseline, lfilter as lfilter_baseline,
-    lfilter_zi_dyn as lfilter_zi_baseline, savgol_coeffs_dyn as savgol_coeffs_baseline,
-    savgol_filter_dyn as savgol_filter_baseline, sosfilt_dyn as sosfilt_baseline,
-    sosfilt_zi_dyn as sosfilt_zi_baseline, sosfiltfilt_dyn as sosfiltfilt_baseline, FiltFiltConfig,
-    FiltFiltKernel, FiltFiltPad, LFilterConfig, LFilterKernel, LFilterZiConfig, LFilterZiKernel,
-    SavgolCoeffsConfig, SavgolCoeffsKernel, SavgolFilterConfig, SavgolFilterKernel, SosFiltConfig,
-    SosFiltFiltConfig, SosFiltFiltKernel, SosFiltKernel, SosFiltZiConfig, SosFiltZiKernel,
+    FiltFiltConfig, FiltFiltKernel, FiltFiltPad, LFilterConfig, LFilterKernel, LFilterZiConfig,
+    LFilterZiKernel, SavgolCoeffsConfig, SavgolCoeffsKernel, SavgolFilterConfig,
+    SavgolFilterKernel, SosFiltConfig, SosFiltFiltConfig, SosFiltFiltKernel, SosFiltKernel,
+    SosFiltZiConfig, SosFiltZiKernel,
 };
-use sci_rs::signal::resample::{resample as resample_baseline, ResampleConfig, ResampleKernel};
+use sci_rs::signal::resample::{ResampleConfig, ResampleKernel};
 use sci_rs::signal::traits::{
-    ChirpWave1D, Convolve1D, Correlate1D, FiltFilt1D, FirWinDesign, IirDesign, LFilter1D,
-    LFilterZiDesign1D, Resample1D, SavgolCoeffsDesign, SavgolFilter1D, SawtoothWave1D, SosFilt1D,
-    SosFiltFilt1D, SosFiltZiDesign1D, SquareWave1D, UnitImpulse1D, WindowGenerate,
+    ChirpWave1D, Convolve1D, Correlate1D, FiltFilt1D, FirWinDesign, GaussPulseWave1D, IirDesign,
+    LFilter1D, LFilterZiDesign1D, Resample1D, SavgolCoeffsDesign, SavgolFilter1D, SawtoothWave1D,
+    SosFilt1D, SosFiltFilt1D, SosFiltZiDesign1D, SquareWave1D, SweepPolyWave1D, UnitImpulse1D,
+    WindowGenerate,
 };
 use sci_rs::signal::wave::{
-    chirp as chirp_baseline, sawtooth as sawtooth_baseline, square as square_baseline,
-    unit_impulse as unit_impulse_baseline, ChirpConfig, ChirpKernel, ChirpMethod,
-    SawtoothWaveConfig, SawtoothWaveKernel, SquareWaveConfig, SquareWaveKernel, UnitImpulseConfig,
-    UnitImpulseKernel,
+    ChirpConfig, ChirpKernel, ChirpMethod, GaussPulseConfig, GaussPulseKernel, SawtoothWaveConfig,
+    SawtoothWaveKernel, SquareWaveConfig, SquareWaveKernel, SweepPolyConfig, SweepPolyKernel,
+    UnitImpulseConfig, UnitImpulseKernel,
 };
-use sci_rs::signal::windows::{
-    get_window as get_window_baseline, GetWindow, GetWindowBuilder, WindowBuilderOwned,
-    WindowConfig, WindowKernel,
-};
+use sci_rs::signal::windows::{WindowBuilderOwned, WindowConfig, WindowKernel};
 use sci_rs::stats::{
     mean as mean_baseline, median as median_baseline, median_abs_deviation as mad_baseline,
     mod_zscore as mod_zscore_baseline, stdev as stdev_baseline, variance as variance_baseline,
@@ -94,6 +84,19 @@ def _compute():
             method=p["method"],
             phi=float(p["phi_deg"]),
             vertex_zero=bool(p["vertex_zero"]),
+        )
+    if op == "gausspulse":
+        return scipy.signal.gausspulse(
+            _as_array("t"),
+            fc=float(p["fc"]),
+            bw=float(p["bw"]),
+            bwr=float(p["bwr"]),
+        )
+    if op == "sweep_poly":
+        return scipy.signal.sweep_poly(
+            _as_array("t"),
+            np.asarray(p["poly"], dtype=float),
+            phi=float(p["phi_deg"]),
         )
     if op == "unit_impulse":
         idx = p.get("idx")
@@ -298,10 +301,15 @@ fn run_contracts() -> Result<()> {
         let kernel = ConvolveKernel::try_new(ConvolveConfig {
             mode: ConvolveMode::Full,
         })?;
+        let baseline_kernel = ConvolveKernel::try_new(ConvolveConfig {
+            mode: ConvolveMode::Full,
+        })?;
         let candidate = kernel
             .run_alloc(in1.as_slice(), in2.as_slice())
             .map_err(|e| anyhow!("convolve candidate execution failed: {e}"))?;
-        let baseline = convolve_baseline(&in1, &in2, ConvolveMode::Full);
+        let baseline = baseline_kernel
+            .run_alloc(in1.as_slice(), in2.as_slice())
+            .map_err(|e| anyhow!("convolve baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "convolve",
@@ -316,8 +324,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("convolve candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(120, || {
-            let _ = convolve_baseline(&in1, &in2, ConvolveMode::Full);
-            Ok(())
+            baseline_kernel
+                .run_alloc(&in1, &in2)
+                .map(|_| ())
+                .map_err(|e| anyhow!("convolve baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -342,10 +352,15 @@ fn run_contracts() -> Result<()> {
         let kernel = CorrelateKernel::try_new(CorrelateConfig {
             mode: ConvolveMode::Full,
         })?;
+        let baseline_kernel = CorrelateKernel::try_new(CorrelateConfig {
+            mode: ConvolveMode::Full,
+        })?;
         let candidate = kernel
             .run_alloc(in1.as_slice(), in2.as_slice())
             .map_err(|e| anyhow!("correlate candidate execution failed: {e}"))?;
-        let baseline = correlate_baseline(&in1, &in2, ConvolveMode::Full);
+        let baseline = baseline_kernel
+            .run_alloc(in1.as_slice(), in2.as_slice())
+            .map_err(|e| anyhow!("correlate baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "correlate",
@@ -360,8 +375,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("correlate candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(120, || {
-            let _ = correlate_baseline(&in1, &in2, ConvolveMode::Full);
-            Ok(())
+            baseline_kernel
+                .run_alloc(&in1, &in2)
+                .map(|_| ())
+                .map_err(|e| anyhow!("correlate baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -384,10 +401,13 @@ fn run_contracts() -> Result<()> {
         let target_len = 384usize;
 
         let kernel = ResampleKernel::try_new(ResampleConfig { target_len })?;
+        let baseline_kernel = ResampleKernel::try_new(ResampleConfig { target_len })?;
         let candidate = kernel
             .run_alloc(input.as_slice())
             .map_err(|e| anyhow!("resample candidate execution failed: {e}"))?;
-        let baseline = resample_baseline(&input, target_len);
+        let baseline = baseline_kernel
+            .run_alloc(input.as_slice())
+            .map_err(|e| anyhow!("resample baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "resample",
@@ -402,8 +422,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("resample candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(80, || {
-            let _ = resample_baseline(&input, target_len);
-            Ok(())
+            baseline_kernel
+                .run_alloc(&input)
+                .map(|_| ())
+                .map_err(|e| anyhow!("resample baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -426,10 +448,13 @@ fn run_contracts() -> Result<()> {
         let t: Vec<f64> = (0..512).map(|i| (i as f64 - 128.0) / 16.0).collect();
 
         let kernel = SquareWaveKernel::try_new(SquareWaveConfig { duty })?;
+        let baseline_kernel = SquareWaveKernel::try_new(SquareWaveConfig { duty })?;
         let candidate = kernel
             .run_alloc(&t)
             .map_err(|e| anyhow!("square candidate execution failed: {e}"))?;
-        let baseline = square_baseline(&Array1::from_vec(t.clone()), duty).to_vec();
+        let baseline = baseline_kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("square baseline execution failed: {e}"))?;
         let py = python_signal_eval(&python_bin, "square", json!({ "t": t, "duty": duty }), 250)?;
 
         let candidate_ns = benchmark_avg_ns(200, || {
@@ -439,8 +464,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("square candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(200, || {
-            let _ = square_baseline(&Array1::from_vec(t.clone()), duty);
-            Ok(())
+            baseline_kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("square baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -463,10 +490,13 @@ fn run_contracts() -> Result<()> {
         let t: Vec<f64> = (0..512).map(|i| (i as f64 - 128.0) / 16.0).collect();
 
         let kernel = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width })?;
+        let baseline_kernel = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width })?;
         let candidate = kernel
             .run_alloc(&t)
             .map_err(|e| anyhow!("sawtooth candidate execution failed: {e}"))?;
-        let baseline = sawtooth_baseline(&Array1::from_vec(t.clone()), width).to_vec();
+        let baseline = baseline_kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("sawtooth baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "sawtooth",
@@ -481,8 +511,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("sawtooth candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(200, || {
-            let _ = sawtooth_baseline(&Array1::from_vec(t.clone()), width);
-            Ok(())
+            baseline_kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("sawtooth baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -518,19 +550,20 @@ fn run_contracts() -> Result<()> {
             phi_deg,
             vertex_zero,
         })?;
-        let candidate = kernel
-            .run_alloc(&t)
-            .map_err(|e| anyhow!("chirp candidate execution failed: {e}"))?;
-        let baseline = chirp_baseline(
-            &Array1::from_vec(t.clone()),
+        let baseline_kernel = ChirpKernel::try_new(ChirpConfig {
             f0,
             t1,
             f1,
             method,
             phi_deg,
             vertex_zero,
-        )
-        .to_vec();
+        })?;
+        let candidate = kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("chirp candidate execution failed: {e}"))?;
+        let baseline = baseline_kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("chirp baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "chirp",
@@ -553,16 +586,122 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("chirp candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(140, || {
-            let _ = chirp_baseline(
-                &Array1::from_vec(t.clone()),
-                f0,
-                t1,
-                f1,
-                method,
-                phi_deg,
-                vertex_zero,
-            );
-            Ok(())
+            baseline_kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("chirp baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // Gaussian pulse (in-phase)
+    {
+        let case_id = "gausspulse_f64";
+        let fc = 5.0f64;
+        let bw = 0.5f64;
+        let bwr = -6.0f64;
+        let t: Vec<f64> = (0..512).map(|i| (i as f64 - 256.0) / 128.0).collect();
+
+        let kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })?;
+        let baseline_kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })?;
+        let candidate = kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("gausspulse candidate execution failed: {e}"))?;
+        let baseline = baseline_kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("gausspulse baseline execution failed: {e}"))?;
+        let py = python_signal_eval(
+            &python_bin,
+            "gausspulse",
+            json!({
+                "t": t,
+                "fc": fc,
+                "bw": bw,
+                "bwr": bwr,
+            }),
+            220,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(180, || {
+            kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("gausspulse candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(180, || {
+            baseline_kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("gausspulse baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // Polynomial sweep
+    {
+        let case_id = "sweep_poly_f64";
+        let phi_deg = 15.0f64;
+        let poly = vec![0.025f64, -0.36, 1.25, 2.0];
+        let t: Vec<f64> = (0..512).map(|i| i as f64 / 128.0).collect();
+
+        let kernel = SweepPolyKernel::try_new(SweepPolyConfig {
+            poly: &poly,
+            phi_deg,
+        })?;
+        let baseline_kernel = SweepPolyKernel::try_new(SweepPolyConfig {
+            poly: &poly,
+            phi_deg,
+        })?;
+        let candidate = kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("sweep_poly candidate execution failed: {e}"))?;
+        let baseline = baseline_kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("sweep_poly baseline execution failed: {e}"))?;
+        let py = python_signal_eval(
+            &python_bin,
+            "sweep_poly",
+            json!({
+                "t": t,
+                "poly": poly,
+                "phi_deg": phi_deg,
+            }),
+            180,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(140, || {
+            kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("sweep_poly candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(140, || {
+            baseline_kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("sweep_poly baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -585,10 +724,13 @@ fn run_contracts() -> Result<()> {
         let idx = 257usize;
 
         let kernel = UnitImpulseKernel::try_new(UnitImpulseConfig { len, idx })?;
+        let baseline_kernel = UnitImpulseKernel::try_new(UnitImpulseConfig { len, idx })?;
         let candidate: Vec<f64> = kernel
             .run_alloc()
             .map_err(|e| anyhow!("unit_impulse candidate execution failed: {e}"))?;
-        let baseline = unit_impulse_baseline::<f64>(len, Some(idx)).to_vec();
+        let baseline: Vec<f64> = baseline_kernel
+            .run_alloc()
+            .map_err(|e| anyhow!("unit_impulse baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "unit_impulse",
@@ -603,7 +745,9 @@ fn run_contracts() -> Result<()> {
             Ok(())
         })?;
         let baseline_ns = benchmark_avg_ns(300, || {
-            let _ = unit_impulse_baseline::<f64>(len, Some(idx));
+            let _: Vec<f64> = baseline_kernel
+                .run_alloc()
+                .map_err(|e| anyhow!("unit_impulse baseline benchmark failed: {e}"))?;
             Ok(())
         })?;
 
@@ -632,18 +776,17 @@ fn run_contracts() -> Result<()> {
             a: a.clone(),
             axis: Some(0),
         })?;
+        let baseline_kernel = LFilterKernel::try_new(LFilterConfig {
+            b: b.clone(),
+            a: a.clone(),
+            axis: Some(0),
+        })?;
         let candidate = kernel
             .run_alloc(&x)
             .map_err(|e| anyhow!("lfilter candidate execution failed: {e}"))?;
-        let (baseline_nd, _) = lfilter_baseline(
-            Array1::from_vec(b.clone()).view(),
-            Array1::from_vec(a.clone()).view(),
-            Array1::from_vec(x.clone()),
-            Some(0),
-            None,
-        )
-        .map_err(|e| anyhow!("lfilter baseline execution failed: {e}"))?;
-        let baseline = baseline_nd.iter().copied().collect::<Vec<_>>();
+        let baseline = baseline_kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("lfilter baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "lfilter",
@@ -658,15 +801,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("lfilter candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(120, || {
-            let _ = lfilter_baseline(
-                Array1::from_vec(b.clone()).view(),
-                Array1::from_vec(a.clone()).view(),
-                Array1::from_vec(x.clone()),
-                Some(0),
-                None,
-            )
-            .map_err(|e| anyhow!("lfilter baseline benchmark failed: {e}"))?;
-            Ok(())
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("lfilter baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -696,10 +834,17 @@ fn run_contracts() -> Result<()> {
             axis: Some(0),
             padding,
         })?;
+        let baseline_kernel = FiltFiltKernel::try_new(FiltFiltConfig {
+            b: b.clone(),
+            a: a.clone(),
+            axis: Some(0),
+            padding,
+        })?;
         let candidate = kernel
             .run_alloc(&x)
             .map_err(|e| anyhow!("filtfilt candidate execution failed: {e}"))?;
-        let baseline = filtfilt_baseline(&b, &a, x.iter(), padding)
+        let baseline = baseline_kernel
+            .run_alloc(&x)
             .map_err(|e| anyhow!("filtfilt baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
@@ -720,9 +865,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("filtfilt candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(50, || {
-            let _ = filtfilt_baseline(&b, &a, x.iter(), padding)
-                .map_err(|e| anyhow!("filtfilt baseline benchmark failed: {e}"))?;
-            Ok(())
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("filtfilt baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -747,12 +893,13 @@ fn run_contracts() -> Result<()> {
         let x = signal.iter().copied().take(320).collect::<Vec<_>>();
 
         let mut kernel = SosFiltKernel::try_new(SosFiltConfig { sos: sos.clone() })?;
+        let mut baseline_kernel = SosFiltKernel::try_new(SosFiltConfig { sos: sos.clone() })?;
         let candidate = kernel
             .run_alloc(&x)
             .map_err(|e| anyhow!("sosfilt candidate execution failed: {e}"))?;
-
-        let mut baseline_sos = sos.clone();
-        let baseline = sosfilt_baseline(x.iter(), baseline_sos.as_mut_slice());
+        let baseline = baseline_kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("sosfilt baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "sosfilt",
@@ -768,9 +915,11 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("sosfilt candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(80, || {
-            let mut bench_sos = sos.clone();
-            let _ = sosfilt_baseline(x.iter(), bench_sos.as_mut_slice());
-            Ok(())
+            let mut bench_kernel = SosFiltKernel::try_new(SosFiltConfig { sos: sos.clone() })?;
+            bench_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("sosfilt baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -792,10 +941,12 @@ fn run_contracts() -> Result<()> {
         let x = signal.iter().copied().take(320).collect::<Vec<_>>();
 
         let kernel = SosFiltFiltKernel::try_new(SosFiltFiltConfig { sos: sos.clone() })?;
+        let baseline_kernel = SosFiltFiltKernel::try_new(SosFiltFiltConfig { sos: sos.clone() })?;
         let candidate = kernel
             .run_alloc(&x)
             .map_err(|e| anyhow!("sosfiltfilt candidate execution failed: {e}"))?;
-        let baseline = sosfiltfilt_baseline(x.iter(), &sos)
+        let baseline = baseline_kernel
+            .run_alloc(&x)
             .map_err(|e| anyhow!("sosfiltfilt baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
@@ -811,9 +962,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("sosfiltfilt candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(40, || {
-            let _ = sosfiltfilt_baseline(x.iter(), &sos)
-                .map_err(|e| anyhow!("sosfiltfilt baseline benchmark failed: {e}"))?;
-            Ok(())
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("sosfiltfilt baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -839,10 +991,18 @@ fn run_contracts() -> Result<()> {
             deriv: Some(0),
             delta: Some(1.0f64),
         })?;
+        let baseline_kernel = SavgolFilterKernel::try_new(SavgolFilterConfig {
+            window_length: 11,
+            polyorder: 3,
+            deriv: Some(0),
+            delta: Some(1.0f64),
+        })?;
         let candidate = kernel
             .run_alloc(&x)
             .map_err(|e| anyhow!("savgol filter candidate execution failed: {e}"))?;
-        let baseline = savgol_filter_baseline(x.iter(), 11, 3, Some(0), Some(1.0f64));
+        let baseline = baseline_kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("savgol filter baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "savgol_filter",
@@ -863,8 +1023,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("savgol filter candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(100, || {
-            let _ = savgol_filter_baseline(x.iter(), 11, 3, Some(0), Some(1.0f64));
-            Ok(())
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("savgol filter baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -889,10 +1051,18 @@ fn run_contracts() -> Result<()> {
             deriv: Some(0),
             delta: Some(1.0f64),
         })?;
+        let baseline_kernel = SavgolCoeffsKernel::try_new(SavgolCoeffsConfig {
+            window_length: 11,
+            polyorder: 3,
+            deriv: Some(0),
+            delta: Some(1.0f64),
+        })?;
         let candidate = kernel
             .run_alloc()
             .map_err(|e| anyhow!("savgol coeffs candidate execution failed: {e}"))?;
-        let baseline = savgol_coeffs_baseline::<f64>(11, 3, Some(0), Some(1.0));
+        let baseline = baseline_kernel
+            .run_alloc()
+            .map_err(|e| anyhow!("savgol coeffs baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "savgol_coeffs",
@@ -912,8 +1082,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("savgol coeffs candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(250, || {
-            let _ = savgol_coeffs_baseline::<f64>(11, 3, Some(0), Some(1.0));
-            Ok(())
+            baseline_kernel
+                .run_alloc()
+                .map(|_| ())
+                .map_err(|e| anyhow!("savgol coeffs baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -938,10 +1110,16 @@ fn run_contracts() -> Result<()> {
             b: b.clone(),
             a: a.clone(),
         })?;
+        let baseline_kernel = LFilterZiKernel::try_new(LFilterZiConfig {
+            b: b.clone(),
+            a: a.clone(),
+        })?;
         let candidate = kernel
             .run_alloc()
             .map_err(|e| anyhow!("lfilter_zi candidate execution failed: {e}"))?;
-        let baseline = lfilter_zi_baseline(&b, &a).to_vec();
+        let baseline = baseline_kernel
+            .run_alloc()
+            .map_err(|e| anyhow!("lfilter_zi baseline execution failed: {e}"))?;
         let py = python_signal_eval(&python_bin, "lfilter_zi", json!({ "b": b, "a": a }), 300)?;
 
         let candidate_ns = benchmark_avg_ns(200, || {
@@ -951,8 +1129,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("lfilter_zi candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(200, || {
-            let _ = lfilter_zi_baseline(&b, &a);
-            Ok(())
+            baseline_kernel
+                .run_alloc()
+                .map(|_| ())
+                .map_err(|e| anyhow!("lfilter_zi baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -972,13 +1152,15 @@ fn run_contracts() -> Result<()> {
     {
         let case_id = "sosfilt_zi_f64";
         let kernel = SosFiltZiKernel::try_new(SosFiltZiConfig { sos: sos.clone() })?;
+        let baseline_kernel = SosFiltZiKernel::try_new(SosFiltZiConfig { sos: sos.clone() })?;
         let candidate_sections = kernel
             .run_alloc()
             .map_err(|e| anyhow!("sosfilt_zi candidate execution failed: {e}"))?;
         let candidate = flatten_sos_state(&candidate_sections);
 
-        let mut baseline_sections = sos.clone();
-        sosfilt_zi_baseline::<f64, _, Sos<f64>>(baseline_sections.iter_mut());
+        let baseline_sections = baseline_kernel
+            .run_alloc()
+            .map_err(|e| anyhow!("sosfilt_zi baseline execution failed: {e}"))?;
         let baseline = flatten_sos_state(&baseline_sections);
 
         let py = python_signal_eval(&python_bin, "sosfilt_zi", json!({ "sos": sos_flat }), 220)?;
@@ -991,8 +1173,10 @@ fn run_contracts() -> Result<()> {
             Ok(())
         })?;
         let baseline_ns = benchmark_avg_ns(150, || {
-            let mut bench_sections = sos.clone();
-            sosfilt_zi_baseline::<f64, _, Sos<f64>>(bench_sections.iter_mut());
+            let bench_kernel = SosFiltZiKernel::try_new(SosFiltZiConfig { sos: sos.clone() })?;
+            let _ = bench_kernel
+                .run_alloc()
+                .map_err(|e| anyhow!("sosfilt_zi baseline benchmark failed: {e}"))?;
             Ok(())
         })?;
 
@@ -1017,11 +1201,17 @@ fn run_contracts() -> Result<()> {
             nx: 128,
             fftbins: Some(false),
         })?;
+        let baseline_kernel = WindowKernel::try_new(WindowConfig {
+            builder: WindowBuilderOwned::Hamming,
+            nx: 128,
+            fftbins: Some(false),
+        })?;
         let candidate = kernel
             .run_alloc()
             .map_err(|e| anyhow!("window candidate execution failed: {e}"))?;
-        let baseline: Vec<f64> =
-            get_window_baseline(GetWindowBuilder::<f64>::Hamming, 128, Some(false)).get_window();
+        let baseline = baseline_kernel
+            .run_alloc()
+            .map_err(|e| anyhow!("window baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "window",
@@ -1036,10 +1226,10 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("window candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(140, || {
-            let _: Vec<f64> =
-                get_window_baseline(GetWindowBuilder::<f64>::Hamming, 128, Some(false))
-                    .get_window();
-            Ok(())
+            baseline_kernel
+                .run_alloc()
+                .map(|_| ())
+                .map_err(|e| anyhow!("window baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -1300,17 +1490,19 @@ fn run_contracts() -> Result<()> {
             scale: Some(true),
             fs: Some(2.0),
         })?;
+        let baseline_kernel = FirWinKernel::try_new(FirWinConfig {
+            numtaps: 31,
+            cutoff: vec![0.2f64],
+            width: None,
+            window: Some(WindowBuilderOwned::Hamming),
+            pass_zero: FilterBandType::Lowpass,
+            scale: Some(true),
+            fs: Some(2.0),
+        })?;
         let candidate = kernel.run_alloc()?;
-        let baseline = firwin_baseline::<f64, f64>(
-            31,
-            &[0.2f64],
-            None,
-            None::<&sci_rs::signal::windows::Hamming>,
-            &FilterBandType::Lowpass,
-            Some(true),
-            Some(2.0),
-        )
-        .map_err(|e| anyhow!("firwin baseline failed: {e}"))?;
+        let baseline = baseline_kernel
+            .run_alloc()
+            .map_err(|e| anyhow!("firwin baseline failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "firwin",
@@ -1330,17 +1522,10 @@ fn run_contracts() -> Result<()> {
             Ok(())
         })?;
         let baseline_ns = benchmark_avg_ns(140, || {
-            let _ = firwin_baseline::<f64, f64>(
-                31,
-                &[0.2f64],
-                None,
-                None::<&sci_rs::signal::windows::Hamming>,
-                &FilterBandType::Lowpass,
-                Some(true),
-                Some(2.0),
-            )
-            .map_err(|e| anyhow!("firwin baseline benchmark failed: {e}"))?;
-            Ok(())
+            baseline_kernel
+                .run_alloc()
+                .map(|_| ())
+                .map_err(|e| anyhow!("firwin baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -1367,19 +1552,24 @@ fn run_contracts() -> Result<()> {
             output: Some(FilterOutputType::Ba),
             fs: Some(1666.0),
         })?;
+        let baseline_kernel = ButterKernel::try_new(ButterConfig {
+            order: 4,
+            wn: vec![10.0f64, 50.0],
+            btype: Some(FilterBandType::Bandpass),
+            analog: Some(false),
+            output: Some(FilterOutputType::Ba),
+            fs: Some(1666.0),
+        })?;
         let candidate = flatten_digital_filter_ba(
             kernel
                 .run_alloc()
                 .map_err(|e| anyhow!("butter candidate failed: {e}"))?,
         )?;
-        let baseline = flatten_digital_filter_ba(butter_baseline(
-            4,
-            vec![10.0f64, 50.0],
-            Some(FilterBandType::Bandpass),
-            Some(false),
-            Some(FilterOutputType::Ba),
-            Some(1666.0),
-        ))?;
+        let baseline = flatten_digital_filter_ba(
+            baseline_kernel
+                .run_alloc()
+                .map_err(|e| anyhow!("butter baseline failed: {e}"))?,
+        )?;
         let py = python_signal_eval(
             &python_bin,
             "butter_ba",
@@ -1398,14 +1588,9 @@ fn run_contracts() -> Result<()> {
             Ok(())
         })?;
         let baseline_ns = benchmark_avg_ns(100, || {
-            let _ = butter_baseline(
-                4,
-                vec![10.0f64, 50.0],
-                Some(FilterBandType::Bandpass),
-                Some(false),
-                Some(FilterOutputType::Ba),
-                Some(1666.0),
-            );
+            let _ = baseline_kernel
+                .run_alloc()
+                .map_err(|e| anyhow!("butter baseline benchmark failed: {e}"))?;
             Ok(())
         })?;
 
@@ -1436,22 +1621,27 @@ fn run_contracts() -> Result<()> {
             output: Some(FilterOutputType::Ba),
             fs: Some(1666.0),
         })?;
+        let baseline_kernel = IirFilterKernel::try_new(IirFilterConfig {
+            order: 4,
+            wn: vec![10.0f64, 50.0],
+            rp: None,
+            rs: Some(20.0),
+            btype: Some(FilterBandType::Bandpass),
+            ftype: Some(FilterType::ChebyshevII),
+            analog: Some(false),
+            output: Some(FilterOutputType::Ba),
+            fs: Some(1666.0),
+        })?;
         let candidate = flatten_digital_filter_ba(
             kernel
                 .run_alloc()
                 .map_err(|e| anyhow!("iirfilter candidate failed: {e}"))?,
         )?;
-        let baseline = flatten_digital_filter_ba(iirfilter_baseline(
-            4,
-            vec![10.0f64, 50.0],
-            None,
-            Some(20.0),
-            Some(FilterBandType::Bandpass),
-            Some(FilterType::ChebyshevII),
-            Some(false),
-            Some(FilterOutputType::Ba),
-            Some(1666.0),
-        ))?;
+        let baseline = flatten_digital_filter_ba(
+            baseline_kernel
+                .run_alloc()
+                .map_err(|e| anyhow!("iirfilter baseline failed: {e}"))?,
+        )?;
         let py = python_signal_eval(
             &python_bin,
             "iirfilter_ba",
@@ -1473,17 +1663,9 @@ fn run_contracts() -> Result<()> {
             Ok(())
         })?;
         let baseline_ns = benchmark_avg_ns(90, || {
-            let _ = iirfilter_baseline(
-                4,
-                vec![10.0f64, 50.0],
-                None,
-                Some(20.0),
-                Some(FilterBandType::Bandpass),
-                Some(FilterType::ChebyshevII),
-                Some(false),
-                Some(FilterOutputType::Ba),
-                Some(1666.0),
-            );
+            let _ = baseline_kernel
+                .run_alloc()
+                .map_err(|e| anyhow!("iirfilter baseline benchmark failed: {e}"))?;
             Ok(())
         })?;
 

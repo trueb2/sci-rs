@@ -204,7 +204,12 @@ where
 ///
 /// Kernel-backed 1D compatibility wrapper for filtfilt.
 ///
-pub fn filtfilt_dyn<T, YI>(b: &[T], a: &[T], y: YI, padding: Option<FiltFiltPad>) -> Result<Vec<T>>
+pub(crate) fn filtfilt_checked<T>(
+    b: &[T],
+    a: &[T],
+    x: &[T],
+    padding: Option<FiltFiltPad>,
+) -> Result<Vec<T>>
 where
     T: Clone
         + Add<T, Output = T>
@@ -213,8 +218,6 @@ where
         + nalgebra::RealField
         + Copy
         + core::iter::Sum,
-    YI: IntoIterator,
-    YI::Item: Borrow<T>,
 {
     let kernel = super::FiltFiltKernel::try_new(super::FiltFiltConfig {
         b: b.to_vec(),
@@ -226,11 +229,34 @@ where
         arg: "b/a".into(),
         reason: "Could not initialize filtfilt kernel.".into(),
     })?;
-    let input = y.into_iter().map(|yi| *yi.borrow()).collect::<Vec<_>>();
-    kernel.run_alloc(&input).map_err(|_| Error::InvalidArg {
+    kernel.run_alloc(x).map_err(|_| Error::InvalidArg {
         arg: "x".into(),
         reason: "filtfilt kernel execution failed.".into(),
     })
+}
+
+///
+/// Kernel-backed 1D compatibility wrapper for filtfilt.
+///
+pub(crate) fn filtfilt_dyn<T, YI>(
+    b: &[T],
+    a: &[T],
+    y: YI,
+    padding: Option<FiltFiltPad>,
+) -> Result<Vec<T>>
+where
+    T: Clone
+        + Add<T, Output = T>
+        + Sub<T, Output = T>
+        + num_traits::One
+        + nalgebra::RealField
+        + Copy
+        + core::iter::Sum,
+    YI: IntoIterator,
+    YI::Item: Borrow<T>,
+{
+    let input = y.into_iter().map(|yi| *yi.borrow()).collect::<Vec<_>>();
+    filtfilt_checked(b, a, &input, padding)
 }
 
 /// Implement filtfilt for fixed dimension of input array `x`.
@@ -387,7 +413,7 @@ macro_rules! filtfilt_for_dim {
                 let (edge, ext) = validate_pad(padding, x.view(), axis, a.len().max(b.len()))?;
 
                 let zi: Array<T, Dim<[Ix; $N]>> = {
-                    let mut zi = lfilter_zi_dyn(b.as_slice().unwrap(), a.as_slice().unwrap());
+                    let mut zi = lfilter_zi_dyn(b.as_slice().unwrap(), a.as_slice().unwrap())?;
                     let mut sh = [1; $N];
                     sh[axis] = zi.len(); // .size()?
 

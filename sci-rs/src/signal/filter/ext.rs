@@ -42,7 +42,7 @@ where
 }
 
 /// Pad an [nalgebra] array.
-pub fn pad<T, M, N>(
+pub(crate) fn pad<T, M, N>(
     padtype: Pad,
     mut padlen: Option<usize>,
     x: OMatrix<T, M, N>,
@@ -96,7 +96,7 @@ where
 /// Pad an [nalgebra] array with odd extension.
 ///
 // This differs from [super::FiltFiltPadType]'s ext that acts on [ndarray].
-pub fn odd_ext_dyn<T, M, N>(
+pub(crate) fn odd_ext_dyn<T, M, N>(
     x: OMatrix<T, M, N>,
     n: usize,
     axis: usize,

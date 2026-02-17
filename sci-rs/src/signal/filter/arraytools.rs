@@ -135,11 +135,10 @@ where
     };
     if axis_inner >= 0 {
         Ok(axis_inner.unsigned_abs())
-    } else {
-        let axis_inner = N
-            .checked_add_signed(axis_inner)
-            .expect("Invalid add to `axis` option");
+    } else if let Some(axis_inner) = N.checked_add_signed(axis_inner) {
         Ok(axis_inner)
+    } else {
+        Err(())
     }
 }
 
@@ -179,10 +178,11 @@ where
     if axis_inner >= 0 {
         Ok(axis_inner.unsigned_abs())
     } else {
-        let axis_inner = ndim
-            .checked_add_signed(axis_inner)
-            .expect("Invalid add to `axis` option");
-        Ok(axis_inner)
+        ndim.checked_add_signed(axis_inner)
+            .ok_or(Error::InvalidArg {
+                arg: "axis".into(),
+                reason: "Invalid add to `axis` option".into(),
+            })
     }
 }
 
@@ -200,7 +200,9 @@ where
     Dim<[Ix; N]>: RemoveAxis,
     S: Data<Elem = T> + 'a,
 {
-    a.shape().try_into().expect("Could not cast shape to array")
+    let mut shape = [0; N];
+    shape.copy_from_slice(a.shape());
+    shape
 }
 
 /// Takes a slice along `axis` from `a`.
@@ -217,7 +219,7 @@ where
 ///
 /// # Panics
 /// - Start/stop elements are out of bounds.
-pub fn axis_slice<A, S, D>(
+pub(crate) fn axis_slice<A, S, D>(
     a: &ArrayBase<S, D>,
     start: Option<isize>,
     end: Option<isize>,
@@ -250,9 +252,10 @@ where
         if axis >= 0 {
             axis.unsigned_abs()
         } else {
-            a.ndim()
-                .checked_add_signed(axis)
-                .expect("Invalid add to `axis` option")
+            a.ndim().checked_add_signed(axis).ok_or(Error::InvalidArg {
+                arg: "axis".into(),
+                reason: "Invalid add to `axis` option".into(),
+            })?
         }
     };
 
@@ -325,7 +328,10 @@ where
 
         tmp
     })
-    .unwrap();
+    .map_err(|_| Error::InvalidArg {
+        arg: "slice".into(),
+        reason: "Invalid slice parameters.".into(),
+    })?;
 
     Ok(a.slice(&sl))
 }
@@ -337,7 +343,7 @@ where
 /// # Parameters
 /// * `a`: Array being sliced from.
 /// * `axis`: `Option<isize>`. None defaults to -1.
-pub fn axis_reverse<A, S, D>(
+pub(crate) fn axis_reverse<A, S, D>(
     a: &ArrayBase<S, D>,
     axis: Option<isize>,
 ) -> Result<ArrayView<'_, A, D>>
@@ -367,9 +373,10 @@ where
         if axis >= 0 {
             axis.unsigned_abs()
         } else {
-            a.ndim()
-                .checked_add_signed(axis)
-                .expect("Invalid add to `axis` option")
+            a.ndim().checked_add_signed(axis).ok_or(Error::InvalidArg {
+                arg: "axis".into(),
+                reason: "Invalid add to `axis` option".into(),
+            })?
         }
     };
 

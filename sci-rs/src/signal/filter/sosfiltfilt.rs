@@ -3,7 +3,7 @@ use nalgebra::{DVector, RealField, Scalar};
 use num_traits::{Float, One, Zero};
 use sci_rs_core::{Error, Result};
 
-use super::{design::Sos, pad, sosfilt_dyn, sosfilt_zi_checked, Pad};
+use super::{design::Sos, pad, sosfilt_checked_slice, sosfilt_zi_checked_slice, Pad};
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
@@ -15,18 +15,15 @@ use alloc::vec::Vec;
 ///
 ///
 #[inline]
-pub fn sosfiltfilt_dyn<YI, F>(y: YI, sos: &[Sos<F>]) -> Result<Vec<F>>
+pub(crate) fn sosfiltfilt_checked_slice<F>(y: &[F], sos: &[Sos<F>]) -> Result<Vec<F>>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
-    YI: Iterator,
-    YI::Item: Borrow<F>,
 {
     let n = sos.len();
     let ntaps = 2 * n + 1;
     let bzeros = sos.iter().filter(|s| s.b[2] == F::zero()).count();
     let azeros = sos.iter().filter(|s| s.a[2] == F::zero()).count();
     let ntaps = ntaps - min(bzeros, azeros);
-    let y = y.map(|yi| *yi.borrow()).collect::<Vec<F>>();
     if y.is_empty() {
         return Err(Error::InvalidArg {
             arg: "y".into(),
@@ -34,11 +31,11 @@ where
         });
     }
     let y_len = y.len();
-    let x = DVector::<F>::from_vec(y);
+    let x = DVector::<F>::from_column_slice(y);
     let (edge, ext) = pad(Pad::Odd, None, x, 0, ntaps)?;
 
     let mut init_sos = sos.to_vec();
-    sosfilt_zi_checked::<_, _, Sos<F>>(init_sos.iter_mut())?;
+    sosfilt_zi_checked_slice(init_sos.as_mut_slice())?;
 
     let x0 = *ext.index(0);
     let mut sos_x = init_sos.clone();
@@ -46,7 +43,7 @@ where
         s.zi0 *= x0;
         s.zi1 *= x0;
     }
-    let y = sosfilt_dyn(ext.iter(), &mut sos_x);
+    let y = sosfilt_checked_slice(ext.as_slice(), sos_x.as_mut_slice())?;
 
     let y0 = *y.last().ok_or(Error::InvalidArg {
         arg: "y".into(),
@@ -57,13 +54,39 @@ where
         s.zi0 *= y0;
         s.zi1 *= y0;
     }
-    let mut z = sosfilt_dyn(y.iter().rev(), &mut sos_y)
-        .into_iter()
-        .skip(edge)
-        .take(y_len)
-        .collect::<Vec<_>>();
+    let mut y_rev = y;
+    y_rev.reverse();
+    let mut z = sosfilt_checked_slice(y_rev.as_slice(), sos_y.as_mut_slice())?;
+    z = z.into_iter().skip(edge).take(y_len).collect::<Vec<_>>();
     z.reverse();
     Ok(z)
+}
+
+///
+/// Checked `sosfiltfilt` adapter for iterator-like inputs.
+///
+#[inline]
+pub(crate) fn sosfiltfilt_checked<YI, F>(y: YI, sos: &[Sos<F>]) -> Result<Vec<F>>
+where
+    F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
+    YI: IntoIterator,
+    YI::Item: Borrow<F>,
+{
+    let y = y.into_iter().map(|yi| *yi.borrow()).collect::<Vec<F>>();
+    sosfiltfilt_checked_slice(&y, sos)
+}
+
+///
+/// A forward-backward digital filter using cascaded second-order sections.
+///
+#[inline]
+pub(crate) fn sosfiltfilt_dyn<YI, F>(y: YI, sos: &[Sos<F>]) -> Result<Vec<F>>
+where
+    F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
+    YI: IntoIterator,
+    YI::Item: Borrow<F>,
+{
+    sosfiltfilt_checked(y, sos)
 }
 
 #[cfg(test)]

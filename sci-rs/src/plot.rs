@@ -1,6 +1,47 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::ExitStatus;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Errors raised by plot utilities.
+#[derive(Debug)]
+pub enum PlotError {
+    /// Underlying process or filesystem I/O failure.
+    Io(std::io::Error),
+    /// Python subprocess stdin was unavailable.
+    StdinUnavailable,
+    /// Python subprocess exited unsuccessfully.
+    PythonExitFailure(ExitStatus),
+}
+
+impl core::fmt::Display for PlotError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            PlotError::Io(err) => write!(f, "plot I/O failure: {err}"),
+            PlotError::StdinUnavailable => {
+                write!(f, "failed to open stdin for python plotting process")
+            }
+            PlotError::PythonExitFailure(status) => {
+                write!(f, "python plotting script failed with status: {status}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for PlotError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            PlotError::Io(err) => Some(err),
+            PlotError::StdinUnavailable | PlotError::PythonExitFailure(_) => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for PlotError {
+    fn from(value: std::io::Error) -> Self {
+        PlotError::Io(value)
+    }
+}
 
 /// Debug utility function that will run a python script to plot the data.
 ///
@@ -18,7 +59,7 @@ pub fn python_plot(xs: Vec<&[f32]>) {
 pub fn python_plot_to_path<P: AsRef<Path>>(
     xs: Vec<&[f32]>,
     output_path: Option<P>,
-) -> std::io::Result<PathBuf> {
+) -> Result<PathBuf, PlotError> {
     let output_path = match output_path {
         Some(path) => path.as_ref().to_path_buf(),
         None => {
@@ -74,18 +115,13 @@ plt.close(fig)
     if let Some(mut stdin) = python.stdin.take() {
         stdin.write_all(script)?;
     } else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::BrokenPipe,
-            "Failed to open stdin for python process.",
-        ));
+        return Err(PlotError::StdinUnavailable);
     }
 
     // Wait for completion and return a deterministic error if plotting fails.
     let status = python.wait()?;
     if !status.success() {
-        return Err(std::io::Error::other(
-            "Python plotting script failed with non-zero exit status.",
-        ));
+        return Err(PlotError::PythonExitFailure(status));
     }
     Ok(output_path)
 }

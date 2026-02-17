@@ -23,17 +23,17 @@ use alloc::vec::Vec;
 ///
 /// <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.lfilter_zi.html#scipy.signal.lfilter_zi>
 #[inline]
-pub fn lfilter_zi_dyn<F>(b: &[F], a: &[F]) -> Array1<F>
+pub(crate) fn lfilter_zi_dyn<F>(b: &[F], a: &[F]) -> Result<Array1<F>>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
 {
-    lfilter_zi_checked(b, a).expect("invalid lfilter_zi configuration")
+    lfilter_zi_checked(b, a)
 }
 
 ///
 /// Checked `lfilter_zi` entrypoint used by trait-first kernels.
 ///
-pub fn lfilter_zi_checked<F>(b: &[F], a: &[F]) -> Result<Array1<F>>
+pub(crate) fn lfilter_zi_checked<F>(b: &[F], a: &[F]) -> Result<Array1<F>>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
 {
@@ -130,7 +130,7 @@ mod tests {
         // zi = lfilter_zi(b, a)
         let expected_zi = [0.99672078, -1.49409147, 1.28412268, -0.45244173, 0.07559489];
 
-        let zi = lfilter_zi_dyn(&b, &a);
+        let zi = lfilter_zi_dyn(&b, &a).expect("lfilter_zi should succeed");
         expected_zi.iter().zip(zi.iter()).for_each(|(e, a)| {
             assert_relative_eq!(e, a, max_relative = 1e-6);
         })

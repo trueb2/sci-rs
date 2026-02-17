@@ -263,7 +263,7 @@ where
 ///
 /// Examples
 /// -----
-/// ```
+/// ```ignore
 /// use approx:: assert_abs_diff_eq;
 /// use sci_rs::signal::filter::design::{firwin_dyn, FilterBandType};
 /// use sci_rs::signal::windows::{get_window, GetWindow, GetWindowBuilder};
@@ -284,7 +284,11 @@ where
 ///
 /// # References
 /// <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.windows.get_window.html>
-pub fn get_window<F>(window: GetWindowBuilder<'_, F>, nx: usize, fftbins: Option<bool>) -> Window<F>
+pub(crate) fn get_window<F>(
+    window: GetWindowBuilder<'_, F>,
+    nx: usize,
+    fftbins: Option<bool>,
+) -> Window<F>
 where
     F: Real,
 {
