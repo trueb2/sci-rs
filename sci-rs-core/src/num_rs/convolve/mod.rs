@@ -6,6 +6,7 @@ use ndarray::{Array1, ArrayView1};
 use ndarray_conv::{ConvExt, PaddingMode};
 
 /// Convolution mode determines behavior near edges and output size
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConvolveMode {
     /// Full convolution, output size is `in1.len() + in2.len() - 1`
     Full,

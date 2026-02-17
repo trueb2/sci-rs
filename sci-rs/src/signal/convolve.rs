@@ -1,8 +1,212 @@
+use crate::kernel::{ConfigError, ExecInvariantViolation, KernelLifecycle, Read1D, Write1D};
+use crate::signal::traits::{Convolve1D, Correlate1D};
 use nalgebra::Complex;
 use num_traits::{Float, FromPrimitive, Signed, Zero};
 use rustfft::{FftNum, FftPlanner};
 
 pub use sci_rs_core::num_rs::ConvolveMode;
+
+/// Constructor config for [`ConvolveKernel`].
+#[derive(Debug, Clone, Copy)]
+pub struct ConvolveConfig {
+    /// Convolution output mode.
+    pub mode: ConvolveMode,
+}
+
+impl Default for ConvolveConfig {
+    fn default() -> Self {
+        Self {
+            mode: ConvolveMode::Full,
+        }
+    }
+}
+
+/// Trait-first 1D convolution kernel.
+#[derive(Debug, Clone, Copy)]
+pub struct ConvolveKernel {
+    mode: ConvolveMode,
+}
+
+impl ConvolveKernel {
+    /// Return configured convolution mode.
+    pub fn mode(&self) -> ConvolveMode {
+        self.mode
+    }
+
+    fn expected_len(n1: usize, n2: usize, mode: ConvolveMode) -> usize {
+        match mode {
+            ConvolveMode::Full => n1 + n2 - 1,
+            ConvolveMode::Valid => {
+                if n1 >= n2 {
+                    n1 - n2 + 1
+                } else {
+                    0
+                }
+            }
+            ConvolveMode::Same => n1,
+        }
+    }
+}
+
+impl KernelLifecycle for ConvolveKernel {
+    type Config = ConvolveConfig;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        Ok(Self { mode: config.mode })
+    }
+}
+
+impl<F> Convolve1D<F> for ConvolveKernel
+where
+    F: Float + FftNum + Copy,
+{
+    fn run_into<I1, I2, O>(
+        &self,
+        in1: &I1,
+        in2: &I2,
+        out: &mut O,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I1: Read1D<F> + ?Sized,
+        I2: Read1D<F> + ?Sized,
+        O: Write1D<F> + ?Sized,
+    {
+        let in1 = in1.read_slice().map_err(ExecInvariantViolation::from)?;
+        let in2 = in2.read_slice().map_err(ExecInvariantViolation::from)?;
+        if in1.is_empty() || in2.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "convolution requires non-empty inputs",
+            });
+        }
+        let expected = Self::expected_len(in1.len(), in2.len(), self.mode);
+        let out_slice = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out_slice.len() != expected {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected,
+                got: out_slice.len(),
+            });
+        }
+        let result = fftconvolve(in1, in2, self.mode);
+        out_slice.copy_from_slice(&result);
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I1, I2>(&self, in1: &I1, in2: &I2) -> Result<Vec<F>, ExecInvariantViolation>
+    where
+        I1: Read1D<F> + ?Sized,
+        I2: Read1D<F> + ?Sized,
+    {
+        let in1 = in1.read_slice().map_err(ExecInvariantViolation::from)?;
+        let in2 = in2.read_slice().map_err(ExecInvariantViolation::from)?;
+        if in1.is_empty() || in2.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "convolution requires non-empty inputs",
+            });
+        }
+        Ok(fftconvolve(in1, in2, self.mode))
+    }
+}
+
+/// Constructor config for [`CorrelateKernel`].
+#[derive(Debug, Clone, Copy)]
+pub struct CorrelateConfig {
+    /// Correlation output mode.
+    pub mode: ConvolveMode,
+}
+
+impl Default for CorrelateConfig {
+    fn default() -> Self {
+        Self {
+            mode: ConvolveMode::Full,
+        }
+    }
+}
+
+/// Trait-first 1D correlation kernel.
+#[derive(Debug, Clone, Copy)]
+pub struct CorrelateKernel {
+    mode: ConvolveMode,
+}
+
+impl CorrelateKernel {
+    /// Return configured correlation mode.
+    pub fn mode(&self) -> ConvolveMode {
+        self.mode
+    }
+}
+
+impl KernelLifecycle for CorrelateKernel {
+    type Config = CorrelateConfig;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        Ok(Self { mode: config.mode })
+    }
+}
+
+impl<F> Correlate1D<F> for CorrelateKernel
+where
+    F: Float + FftNum + Copy,
+{
+    fn run_into<I1, I2, O>(
+        &self,
+        in1: &I1,
+        in2: &I2,
+        out: &mut O,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I1: Read1D<F> + ?Sized,
+        I2: Read1D<F> + ?Sized,
+        O: Write1D<F> + ?Sized,
+    {
+        let in1 = in1.read_slice().map_err(ExecInvariantViolation::from)?;
+        let in2 = in2.read_slice().map_err(ExecInvariantViolation::from)?;
+        if in1.is_empty() || in2.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "correlation requires non-empty inputs",
+            });
+        }
+        let expected = ConvolveKernel::expected_len(in1.len(), in2.len(), self.mode);
+        let out_slice = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out_slice.len() != expected {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected,
+                got: out_slice.len(),
+            });
+        }
+        let result = correlate_impl(in1, in2, self.mode);
+        out_slice.copy_from_slice(&result);
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I1, I2>(&self, in1: &I1, in2: &I2) -> Result<Vec<F>, ExecInvariantViolation>
+    where
+        I1: Read1D<F> + ?Sized,
+        I2: Read1D<F> + ?Sized,
+    {
+        let in1 = in1.read_slice().map_err(ExecInvariantViolation::from)?;
+        let in2 = in2.read_slice().map_err(ExecInvariantViolation::from)?;
+        if in1.is_empty() || in2.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "correlation requires non-empty inputs",
+            });
+        }
+        Ok(correlate_impl(in1, in2, self.mode))
+    }
+}
+
+fn correlate_impl<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> Vec<F> {
+    let mut in2_rev = in2.to_vec();
+    in2_rev.reverse();
+    fftconvolve(in1, &in2_rev, mode)
+}
 
 /// Performs FFT-based convolution on two slices of floating point values.
 ///
@@ -19,6 +223,10 @@ pub use sci_rs_core::num_rs::ConvolveMode;
 /// A Vec containing the discrete linear convolution of `in1` with `in2`.
 /// For Full mode, the output length will be `in1.len() + in2.len() - 1`.
 pub fn fftconvolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> Vec<F> {
+    if in1.is_empty() || in2.is_empty() {
+        return Vec::new();
+    }
+
     // Determine the size of the FFT (next power of 2 for zero-padding)
     let n1 = in1.len();
     let n2 = in2.len();
@@ -90,7 +298,13 @@ pub fn fftconvolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) 
 /// A Vec containing the convolution of `in1` with `in2`.
 /// With Full mode, the output length will be `in1.len() + in2.len() - 1`.
 pub fn convolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> Vec<F> {
-    fftconvolve(in1, in2, mode)
+    if in1.is_empty() || in2.is_empty() {
+        return Vec::new();
+    }
+
+    ConvolveKernel { mode }
+        .run_alloc(in1, in2)
+        .unwrap_or_default()
 }
 
 /// Compute the cross-correlation of two signals using FFT.
@@ -106,16 +320,22 @@ pub fn convolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> 
 /// A Vec containing the cross-correlation of `in1` with `in2`.
 /// With Full mode, the output length will be `in1.len() + in2.len() - 1`.
 pub fn correlate<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> Vec<F> {
-    // For correlation, we need to reverse in2
-    let mut in2_rev = in2.to_vec();
-    in2_rev.reverse();
-    fftconvolve(in1, &in2_rev, mode)
+    if in1.is_empty() || in2.is_empty() {
+        return Vec::new();
+    }
+
+    CorrelateKernel { mode }
+        .run_alloc(in1, in2)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::KernelLifecycle;
+    use crate::signal::traits::{Convolve1D, Correlate1D};
     use approx::assert_relative_eq;
+    use ndarray::Array1;
 
     #[test]
     fn test_convolve() {
@@ -163,7 +383,47 @@ mod tests {
     }
 
     #[test]
+    fn test_convolve_kernel_run_into_slice() {
+        let kernel = ConvolveKernel::try_new(ConvolveConfig {
+            mode: ConvolveMode::Full,
+        })
+        .expect("kernel should initialize");
+        let in1 = [1.0f64, 2.0, 3.0];
+        let in2 = [4.0f64, 5.0, 6.0];
+        let mut out = [0.0f64; 5];
+
+        kernel
+            .run_into(&in1, &in2, &mut out)
+            .expect("kernel run_into should succeed");
+
+        let expected = [4.0, 13.0, 28.0, 27.0, 18.0];
+        out.iter()
+            .zip(expected.iter())
+            .for_each(|(a, b)| assert_relative_eq!(a, b, epsilon = 1e-10));
+    }
+
+    #[test]
+    fn test_correlate_kernel_run_alloc_ndarray_input() {
+        let kernel = CorrelateKernel::try_new(CorrelateConfig {
+            mode: ConvolveMode::Full,
+        })
+        .expect("kernel should initialize");
+        let in1 = Array1::from(vec![1.0f64, 2.0, 3.0]);
+        let in2 = Array1::from(vec![4.0f64, 5.0, 6.0]);
+
+        let out = kernel
+            .run_alloc(&in1, &in2)
+            .expect("kernel run_alloc should succeed");
+
+        let expected = [6.0, 17.0, 32.0, 23.0, 12.0];
+        out.iter()
+            .zip(expected.iter())
+            .for_each(|(a, b)| assert_relative_eq!(a, b, epsilon = 1e-10));
+    }
+
+    #[test]
     #[cfg(feature = "plot")]
+    #[ignore = "manual plotting smoke test; local artifact generation only"]
     fn test_scipy_example() {
         use rand::distr::{Distribution, StandardUniform};
         use rand::rng;

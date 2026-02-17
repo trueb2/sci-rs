@@ -2,11 +2,13 @@ use core::ops::Sub;
 
 use nalgebra::{allocator::Allocator, DefaultAllocator, Dim, Dyn, OMatrix, Scalar};
 use num_traits::{One, Zero};
+use sci_rs_core::{Error, Result};
 
 /// Pad types.
 ///
 /// Used by [super::sosfiltfilt].  
 /// This differs from [super::FiltFiltPadType] which has different semantics.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Pad {
     /// No padding.
     None,
@@ -21,6 +23,24 @@ pub enum Pad {
     Constant,
 }
 
+fn to_dyn_matrix<T, M, N>(x: OMatrix<T, M, N>) -> OMatrix<T, Dyn, Dyn>
+where
+    T: Scalar + Copy,
+    M: Dim,
+    N: Dim,
+    DefaultAllocator: Allocator<M, N> + Allocator<Dyn, Dyn>,
+{
+    nalgebra::Matrix::<
+        T,
+        nalgebra::Dyn,
+        nalgebra::Dyn,
+        <nalgebra::DefaultAllocator as nalgebra::allocator::Allocator<
+            nalgebra::Dyn,
+            nalgebra::Dyn,
+        >>::Buffer<T>,
+    >::from_iterator(x.shape().0, x.shape().1, x.into_iter().cloned())
+}
+
 /// Pad an [nalgebra] array.
 pub fn pad<T, M, N>(
     padtype: Pad,
@@ -28,7 +48,7 @@ pub fn pad<T, M, N>(
     x: OMatrix<T, M, N>,
     axis: usize,
     ntaps: usize,
-) -> (usize, OMatrix<T, Dyn, Dyn>)
+) -> Result<(usize, OMatrix<T, Dyn, Dyn>)>
 where
     T: Scalar + Copy + Zero + One + Sub<Output = T>,
     M: Dim,
@@ -44,54 +64,43 @@ where
         None => ntaps * 3,
     };
 
-    assert!(axis < 2);
+    if axis >= 2 {
+        return Err(Error::InvalidArg {
+            arg: "axis".into(),
+            reason: "index out of range.".into(),
+        });
+    }
     let shape = x.shape();
-    match axis {
-        0 => assert!(shape.0 > edge),
-        1 => assert!(shape.1 > edge),
-        _ => panic!(),
+    let axis_len = if axis == 0 { shape.0 } else { shape.1 };
+    if axis_len <= edge {
+        return Err(Error::InvalidArg {
+            arg: "padlen".into(),
+            reason: "edge extension cannot exceed the selected axis length.".into(),
+        });
     }
 
-    if matches!(padtype, Pad::None) {
-        return (
-            edge,
-            nalgebra::Matrix::<
-                T,
-                nalgebra::Dyn,
-                nalgebra::Dyn,
-                <nalgebra::DefaultAllocator as nalgebra::allocator::Allocator<
-                    nalgebra::Dyn,
-                    nalgebra::Dyn,
-                >>::Buffer<T>,
-            >::from_iterator(x.shape().0, x.shape().1, x.into_iter().cloned()),
-        );
-    }
-
-    if edge == 0 {
-        return (
-            edge,
-            nalgebra::Matrix::<
-                T,
-                nalgebra::Dyn,
-                nalgebra::Dyn,
-                <nalgebra::DefaultAllocator as nalgebra::allocator::Allocator<
-                    nalgebra::Dyn,
-                    nalgebra::Dyn,
-                >>::Buffer<T>,
-            >::from_iterator(x.shape().0, x.shape().1, x.into_iter().cloned()),
-        );
+    if matches!(padtype, Pad::None) || edge == 0 {
+        return Ok((edge, to_dyn_matrix(x)));
     }
 
     match padtype {
-        Pad::Odd => (edge, odd_ext_dyn(x, edge, axis)),
-        _ => unreachable!(),
+        Pad::Odd => Ok((edge, odd_ext_dyn(x, edge, axis)?)),
+        Pad::Even | Pad::Constant => Err(Error::InvalidArg {
+            arg: "padtype".into(),
+            reason: "only odd extension padding is currently implemented.".into(),
+        }),
+        Pad::None => unreachable!(),
     }
 }
 
 /// Pad an [nalgebra] array with odd extension.
 ///
 // This differs from [super::FiltFiltPadType]'s ext that acts on [ndarray].
-pub fn odd_ext_dyn<T, M, N>(x: OMatrix<T, M, N>, n: usize, axis: usize) -> OMatrix<T, Dyn, Dyn>
+pub fn odd_ext_dyn<T, M, N>(
+    x: OMatrix<T, M, N>,
+    n: usize,
+    axis: usize,
+) -> Result<OMatrix<T, Dyn, Dyn>>
 where
     T: Scalar + Copy + Zero + One + Sub<Output = T>,
     M: Dim,
@@ -99,25 +108,28 @@ where
     DefaultAllocator: Allocator<M, N> + Allocator<Dyn, Dyn>,
 {
     //TODO: Figure out the ndarray situation
-    assert!(axis < 2);
+    if axis >= 2 {
+        return Err(Error::InvalidArg {
+            arg: "axis".into(),
+            reason: "index out of range.".into(),
+        });
+    }
 
     if n < 1 {
-        return nalgebra::Matrix::<
-            T,
-            nalgebra::Dyn,
-            nalgebra::Dyn,
-            <nalgebra::DefaultAllocator as nalgebra::allocator::Allocator<
-                nalgebra::Dyn,
-                nalgebra::Dyn,
-            >>::Buffer<T>,
-        >::from_iterator(x.shape().0, x.shape().1, x.into_iter().cloned());
+        return Ok(to_dyn_matrix(x));
+    }
+
+    let axis_len = if axis == 0 { x.shape().0 } else { x.shape().1 };
+    if n >= axis_len {
+        return Err(Error::InvalidArg {
+            arg: "n".into(),
+            reason: "extension length must be less than the selected axis length.".into(),
+        });
     }
 
     let two = T::one() + T::one();
     match axis {
         0 => {
-            assert!(n < x.shape().0);
-
             // extend rows
             let (old_rows, old_columns) = x.shape();
             let (new_rows, new_columns) = (old_rows + 2 * n, old_columns);
@@ -163,11 +175,9 @@ where
                 }
             }
 
-            m
+            Ok(m)
         }
         1 => {
-            assert!(n < x.shape().1);
-
             // extend columns
             let shape = x.shape();
             let (old_rows, old_columns) = x.shape();
@@ -214,9 +224,12 @@ where
                 }
             }
 
-            m
+            Ok(m)
         }
-        _ => panic!("Not implemented for higher dimensions extensions"),
+        _ => Err(Error::InvalidArg {
+            arg: "axis".into(),
+            reason: "index out of range.".into(),
+        }),
     }
 }
 
@@ -240,7 +253,7 @@ mod tests {
             0,  1 , 4,  9, 16;
             -1,  0 , 5, 14, 27;
         );
-        let row_ext = odd_ext_dyn(a, 1, 0);
+        let row_ext = odd_ext_dyn(a, 1, 0).unwrap();
         assert_eq!(scipy_rows, row_ext);
 
         // odd_ext(a, 2)
@@ -248,7 +261,7 @@ mod tests {
             -1,  0,  1,  2 , 3  ,4  ,5  ,6  ,7;
             -4, -1,  0,  1 , 4  ,9 ,16 ,23 ,28
         );
-        let col_ext = odd_ext_dyn(a, 2, 1);
+        let col_ext = odd_ext_dyn(a, 2, 1).unwrap();
         assert_eq!(scipy_cols, col_ext);
 
         let a = nalgebra::matrix!(
@@ -267,7 +280,7 @@ mod tests {
             0   ,1  ,12  ,45 ,112;
         -1 ,  0 , 13 , 50, 123;
         );
-        let row_ext = odd_ext_dyn(a, 2, 0);
+        let row_ext = odd_ext_dyn(a, 2, 0).unwrap();
         assert_eq!(scipy_rows, row_ext);
     }
 }

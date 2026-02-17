@@ -4,6 +4,7 @@ use core::{
 };
 use nalgebra::RealField;
 use num_traits::Float;
+use sci_rs_core::{Error, Result};
 
 use super::design::Sos;
 
@@ -171,6 +172,24 @@ where
 }
 
 ///
+/// Checked SOS filtering entrypoint.
+///
+pub fn sosfilt_checked<YI, F>(y: YI, sos: &mut [Sos<F>]) -> Result<Vec<F>>
+where
+    F: RealField + Copy,
+    YI: IntoIterator,
+    YI::Item: Borrow<F>,
+{
+    if sos.is_empty() {
+        return Err(Error::InvalidArg {
+            arg: "sos".into(),
+            reason: "sos must be non-empty.".into(),
+        });
+    }
+    Ok(sosfilt_dyn(y, sos))
+}
+
+///
 /// Apply the cascaded Biquad filter represented by `sos` to the input `y`
 /// representing a single sample. This avoids allocating at the cost of not
 /// being able to specialize the filter length.
@@ -207,6 +226,23 @@ where
         sos.zi1 = sos.b[2] * x_curr - sos.a[2] * x_new;
         x_new
     })
+}
+
+///
+/// Checked single-sample SOS filtering entrypoint.
+///
+pub fn sosfilt_item_checked<F, B>(y: B, sos: &mut [Sos<F>]) -> Result<F>
+where
+    F: RealField + Copy,
+    B: Borrow<F>,
+{
+    if sos.is_empty() {
+        return Err(Error::InvalidArg {
+            arg: "sos".into(),
+            reason: "sos must be non-empty.".into(),
+        });
+    }
+    Ok(sosfilt_item(y, sos))
 }
 
 type Sos32 = Sos<f32>;

@@ -6,6 +6,8 @@ mod filter_type;
 mod firwin;
 mod iirfilter;
 mod kaiser;
+#[cfg(feature = "alloc")]
+mod kernels;
 mod lp2bp_zpk;
 mod lp2bs_zpk;
 mod lp2hp_zpk;
@@ -23,6 +25,8 @@ pub use filter_type::*;
 pub use firwin::*;
 pub use iirfilter::*;
 pub use kaiser::*;
+#[cfg(feature = "alloc")]
+pub use kernels::*;
 pub use lp2bp_zpk::*;
 pub use lp2bs_zpk::*;
 pub use lp2hp_zpk::*;

@@ -9,6 +9,8 @@ use super::{
     DigitalFilter, FilterBandType, FilterOutputType, FilterType, Sos,
 };
 #[cfg(feature = "alloc")]
+use crate::error::Error;
+#[cfg(feature = "alloc")]
 use crate::signal::filter::design::{zpk2tf_dyn, ZpkFormatFilter};
 
 #[cfg(feature = "alloc")]
@@ -56,18 +58,45 @@ pub fn iirfilter_dyn<F>(
 where
     F: RealField + Float + Sum,
 {
+    iirfilter_checked(order, wn, rp, rs, btype, ftype, analog, output, fs)
+        .expect("invalid iirfilter configuration")
+}
+
+/// Checked IIR design entrypoint used by trait-first kernels.
+#[allow(clippy::too_many_arguments)]
+#[cfg(feature = "alloc")]
+pub fn iirfilter_checked<F>(
+    order: usize,
+    wn: Vec<F>,
+    rp: Option<F>,
+    rs: Option<F>,
+    btype: Option<FilterBandType>,
+    ftype: Option<FilterType>,
+    analog: Option<bool>,
+    output: Option<FilterOutputType>,
+    fs: Option<F>,
+) -> Result<DigitalFilter<F>, Error>
+where
+    F: RealField + Float + Sum,
+{
     use super::bilinear_zpk_dyn;
 
     let analog = analog.unwrap_or(false);
     let mut wn = wn;
 
     if wn.len() > 2 {
-        panic!("Wn may be of len 1 or 2");
+        return Err(Error::InvalidArg {
+            arg: "wn".into(),
+            reason: "wn length must be 1 or 2".into(),
+        });
     }
 
     if let Some(fs) = fs {
         if analog {
-            panic!("fs cannot be specified for an analog filter");
+            return Err(Error::InvalidArg {
+                arg: "fs".into(),
+                reason: "fs cannot be specified for an analog filter".into(),
+            });
         }
 
         wn.iter_mut().for_each(|wni| {
@@ -76,22 +105,34 @@ where
     }
 
     if wn.iter().any(|wi| *wi <= F::zero()) {
-        panic!("filter critical frequencies must be greater than 0");
+        return Err(Error::InvalidArg {
+            arg: "wn".into(),
+            reason: "filter critical frequencies must be greater than 0".into(),
+        });
     }
 
     if wn.len() > 1 && wn[0] >= wn[1] {
-        panic!("Wn[0] must be less than Wn[1]");
+        return Err(Error::InvalidArg {
+            arg: "wn".into(),
+            reason: "Wn[0] must be less than Wn[1]".into(),
+        });
     }
 
     if let Some(rp) = rp {
         if rp < F::zero() {
-            panic!("passband ripple (rp) must be positive");
+            return Err(Error::InvalidArg {
+                arg: "rp".into(),
+                reason: "passband ripple (rp) must be positive".into(),
+            });
         }
     }
 
     if let Some(rs) = rs {
         if rs < F::zero() {
-            panic!("stopband attenuation (rs) must be positive");
+            return Err(Error::InvalidArg {
+                arg: "rs".into(),
+                reason: "stopband attenuation (rs) must be positive".into(),
+            });
         }
     }
 
@@ -101,45 +142,62 @@ where
         FilterType::Butterworth => buttap_dyn(order),
         FilterType::ChebyshevI => {
             if rp.is_none() {
-                panic!("passband ripple (rp) must be provided to design a Chebyshev I filter");
+                return Err(Error::InvalidArg {
+                    arg: "rp".into(),
+                    reason: "passband ripple (rp) must be provided for Chebyshev I".into(),
+                });
             }
             cheb1ap_dyn(order, rp.unwrap())
         }
         FilterType::ChebyshevII => {
-            if rp.is_none() {
-                panic!(
-                    "stopband attenuation (rs) must be provided to design an Chebyshev II filter."
-                );
+            if rs.is_none() {
+                return Err(Error::InvalidArg {
+                    arg: "rs".into(),
+                    reason: "stopband attenuation (rs) must be provided for Chebyshev II".into(),
+                });
             }
             cheb2ap_dyn(order, rs.unwrap())
         }
         FilterType::CauerElliptic => {
             if rs.is_none() || rp.is_none() {
-                panic!("Both rp and rs must be provided to design an elliptic filter.");
+                return Err(Error::InvalidArg {
+                    arg: "rp/rs".into(),
+                    reason: "both rp and rs must be provided for Cauer elliptic filters".into(),
+                });
             }
-            // ellipap::<N>(rp, rs)
-            todo!()
+            return Err(Error::InvalidArg {
+                arg: "ftype".into(),
+                reason: "FilterType::CauerElliptic is not implemented".into(),
+            });
         }
         FilterType::BesselThomson(norm) => {
-            // besselap::<N>(norm = norm),
-            todo!()
+            let _ = norm;
+            return Err(Error::InvalidArg {
+                arg: "ftype".into(),
+                reason: "FilterType::BesselThomson is not implemented".into(),
+            });
         }
     };
 
     // Pre-warp frequencies for digital filter design
-    let (fs, warped) = if !analog {
+    let (fs_warp, warped) = if !analog {
         if wn.iter().any(|wi| *wi <= F::zero() || *wi >= F::one()) {
             if let Some(fs) = fs {
-                panic!(
-                    "Digital filter critical frequencies must be 0 < Wn < fs/2 (fs={} -> fs/2={})",
-                    fs,
-                    fs / F::from(2.).unwrap()
-                );
+                return Err(Error::InvalidArg {
+                    arg: "wn".into(),
+                    reason: {
+                        let nyq = fs / F::from(2.).unwrap();
+                        alloc::format!("digital critical frequencies must satisfy 0 < Wn < fs/2 (fs={fs}, fs/2={nyq})")
+                    },
+                });
             }
-            panic!("Digital filter critical frequencies must be 0 < Wn < 1");
+            return Err(Error::InvalidArg {
+                arg: "wn".into(),
+                reason: "digital critical frequencies must satisfy 0 < Wn < 1".into(),
+            });
         }
         let fs = F::from(2.).unwrap();
-        let mut warped = wn
+        let warped = wn
             .iter()
             .map(|wni| F::from(2.).unwrap() * fs * Float::tan(F::from(PI).unwrap() * *wni / fs))
             .collect::<Vec<_>>();
@@ -153,26 +211,29 @@ where
     let zpk = match btype {
         FilterBandType::Lowpass => {
             if wn.len() != 1 {
-                panic!(
-                    "Must specify a single critical frequency Wn for lowpass or highpass filter"
-                );
+                return Err(Error::InvalidArg {
+                    arg: "wn".into(),
+                    reason: "lowpass/highpass filters require a single Wn value".into(),
+                });
             }
 
             lp2lp_zpk_dyn(zpk, Some(warped[0]))
         }
         FilterBandType::Highpass => {
             if wn.len() != 1 {
-                panic!(
-                    "Must specify a single critical frequency Wn for lowpass or highpass filter"
-                );
+                return Err(Error::InvalidArg {
+                    arg: "wn".into(),
+                    reason: "lowpass/highpass filters require a single Wn value".into(),
+                });
             }
             lp2hp_zpk_dyn(zpk, Some(warped[0]))
         }
         FilterBandType::Bandpass => {
             if wn.len() != 2 {
-                panic!(
-                    "Wn must specify start and stop frequencies for bandpass or bandstop filter"
-                );
+                return Err(Error::InvalidArg {
+                    arg: "wn".into(),
+                    reason: "bandpass/bandstop filters require start and stop frequencies".into(),
+                });
             }
 
             let bw = warped[1] - warped[0];
@@ -181,9 +242,10 @@ where
         }
         FilterBandType::Bandstop => {
             if wn.len() != 2 {
-                panic!(
-                    "Wn must specify start and stop frequencies for bandpass or bandstop filter"
-                );
+                return Err(Error::InvalidArg {
+                    arg: "wn".into(),
+                    reason: "bandpass/bandstop filters require start and stop frequencies".into(),
+                });
             }
 
             let bw = warped[1] - warped[0];
@@ -194,18 +256,18 @@ where
 
     // Find discrete equivalent if necessary
     let zpk = if !analog {
-        bilinear_zpk_dyn(zpk, fs)
+        bilinear_zpk_dyn(zpk, fs_warp)
     } else {
         zpk
     };
 
     // Transform to proper out type (pole-zero, state-space, numer-denom)
     let output = output.unwrap_or(FilterOutputType::Ba);
-    match output {
+    Ok(match output {
         FilterOutputType::Zpk => DigitalFilter::Zpk(zpk),
         FilterOutputType::Ba => DigitalFilter::Ba(zpk2tf_dyn(2 * order, &zpk.z, &zpk.p, zpk.k)),
         FilterOutputType::Sos => DigitalFilter::Sos(zpk2sos_dyn(order, zpk, None, Some(analog))),
-    }
+    })
 }
 
 /// """Return (z,p,k) for analog prototype of Nth-order Butterworth filter.

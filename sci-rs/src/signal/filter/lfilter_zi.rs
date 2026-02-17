@@ -2,6 +2,7 @@ use core::{iter::Sum, ops::SubAssign};
 use nalgebra::{DMatrix, OMatrix, RealField, SMatrix, Scalar};
 use ndarray::Array1;
 use num_traits::{Float, One, Zero};
+use sci_rs_core::{Error, Result};
 
 use crate::linalg::companion_dyn;
 
@@ -26,14 +27,40 @@ pub fn lfilter_zi_dyn<F>(b: &[F], a: &[F]) -> Array1<F>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
 {
+    lfilter_zi_checked(b, a).expect("invalid lfilter_zi configuration")
+}
+
+///
+/// Checked `lfilter_zi` entrypoint used by trait-first kernels.
+///
+pub fn lfilter_zi_checked<F>(b: &[F], a: &[F]) -> Result<Array1<F>>
+where
+    F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
+{
+    if b.is_empty() {
+        return Err(Error::InvalidArg {
+            arg: "b".into(),
+            reason: "b must be non-empty.".into(),
+        });
+    }
+    if a.is_empty() {
+        return Err(Error::InvalidArg {
+            arg: "a".into(),
+            reason: "a must contain at least one non-zero coefficient.".into(),
+        });
+    }
+
     let m = b.len();
 
     let ai0 = a
         .iter()
         .enumerate()
         .find(|(_, ai)| **ai != F::zero())
-        .expect("There must be at least one nonzero `a` coefficient.")
-        .0;
+        .map(|(i, _)| i)
+        .ok_or(Error::InvalidArg {
+            arg: "a".into(),
+            reason: "a must contain at least one non-zero coefficient.".into(),
+        })?;
 
     // Normalize to a[0] == 1
     let mut a = a.iter().skip(ai0).cloned().collect::<Vec<_>>();
@@ -76,7 +103,7 @@ where
         }
     }
 
-    zi.into()
+    Ok(zi.into())
 }
 
 #[cfg(test)]

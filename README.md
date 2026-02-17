@@ -67,15 +67,65 @@ let data = (0..100000).map(|i| i as f32);
 let filtered: Vec<f32> = sosfiltfilt_dyn(data, &sos.sos);
 ```
 
-## Tests pass according to SciPy
+## How SciPy Comparison Works
 
-For correctness, tests use hardcoded magic numbers from scipy. At the moment, this requires manual scripting and testing. A local python virtualenv is recommended for development of this crate.
+SciPy is the local reference oracle for behavior and numeric parity.
+
+Comparison workflow:
+
+1. Run local contracts with:
+
+```bash
+cargo run -p xtask -- contracts
+```
+
+2. Inspect local-only artifacts in `target/contracts/<timestamp>/`:
+   - `summary.csv`
+   - `summary.json`
+   - `report.pdf`
+   - `plots/*.png`
+
+3. Required parity metrics per case:
+   - Pearson `r`
+   - MAE
+   - RMSE
+   - max-abs
+
+4. Required performance metrics per case:
+   - `rust_candidate_ns`
+   - `rust_baseline_ns`
+   - `python_ns`
+   - `speedup_vs_baseline`
+   - `speedup_vs_python`
+
+5. Plot policy is non-blocking only:
+   - no interactive windows
+   - save files only
 
 ## Contributing
 
 Please compare your changes for correctness against SciPy if implementing or correcting a new feature.
 
 Generating plots and adding plots to PRs can help accelerate debugging and approval.
+
+SciPy feature planning and execution are tracked in:
+
+1. `/Users/jacobtrueb/Desktop/workspace/sci-rs/docs/SCIPY_CHECKLIST.md`
+2. `/Users/jacobtrueb/Desktop/workspace/sci-rs/docs/SCIPY_CHECKLIST_PROCESS.md`
+3. `/Users/jacobtrueb/Desktop/workspace/sci-rs/docs/SCIPY_AGENT_PACKET_TEMPLATE.md`
+4. `/Users/jacobtrueb/Desktop/workspace/sci-rs/docs/SCIPY_TRACE_PROTOCOL.md`
+
+### Refactor Workflow
+
+Current refactor policy and contributor guardrails are documented in `AGENTS.md`.
+
+Local contract generation command:
+
+```bash
+cargo run -p xtask -- contracts
+```
+
+This writes local-only parity/performance artifacts to `target/contracts/<timestamp>/`.
 
 Here is a quick plotting script
 
@@ -109,9 +159,9 @@ ax.set_ylabel('Magnitude Difference (a.u.)')
 ax.set_xlabel('Time (s)')
 ax.legend()
 
-# Manually inspect the data and grab screenshot
+# Save non-blocking plot artifact for inspection
 plt.tight_layout()
-plt.show()
+plt.savefig("comparison.png", dpi=150)
 ```
 
 ![Example Plot](./images/example-plot.png)
@@ -191,5 +241,3 @@ import sciprs
 # do what you want
 print(sciprs.call_new_function(1,2,3))
 ```
-
-

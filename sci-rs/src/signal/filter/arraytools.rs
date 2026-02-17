@@ -2,12 +2,99 @@
 //!
 //! Designed for ndarrays; with scipy's internal nomenclature.
 
+use crate::kernel::{ConfigError, KernelLifecycle};
 use alloc::{vec, vec::Vec};
 use ndarray::{
     ArrayBase, ArrayView, Axis, Data, Dim, Dimension, IntoDimension, Ix, RemoveAxis, SliceArg,
     SliceInfo, SliceInfoElem,
 };
 use sci_rs_core::{Error, Result};
+
+/// Constructor config for [`AxisSliceKernel`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AxisSliceConfig {
+    /// Start index for the slice.
+    pub start: Option<isize>,
+    /// End index for the slice.
+    pub end: Option<isize>,
+    /// Step for the slice.
+    pub step: Option<isize>,
+    /// Target axis, defaults to last axis when `None`.
+    pub axis: Option<isize>,
+}
+
+/// Checked kernel wrapper for [`axis_slice`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AxisSliceKernel {
+    start: Option<isize>,
+    end: Option<isize>,
+    step: Option<isize>,
+    axis: Option<isize>,
+}
+
+impl KernelLifecycle for AxisSliceKernel {
+    type Config = AxisSliceConfig;
+
+    fn try_new(config: Self::Config) -> core::result::Result<Self, ConfigError> {
+        if config.step == Some(0) {
+            return Err(ConfigError::InvalidArgument {
+                arg: "step",
+                reason: "step cannot be zero",
+            });
+        }
+        Ok(Self {
+            start: config.start,
+            end: config.end,
+            step: config.step,
+            axis: config.axis,
+        })
+    }
+}
+
+impl AxisSliceKernel {
+    /// Apply axis slicing with validated configuration.
+    pub fn run<'a, A, S, D>(&self, a: &'a ArrayBase<S, D>) -> Result<ArrayView<'a, A, D>>
+    where
+        S: Data<Elem = A>,
+        D: Dimension,
+        SliceInfo<Vec<SliceInfoElem>, D, D>: SliceArg<D, OutDim = D>,
+    {
+        axis_slice(a, self.start, self.end, self.step, self.axis)
+    }
+}
+
+/// Constructor config for [`AxisReverseKernel`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AxisReverseConfig {
+    /// Target axis, defaults to last axis when `None`.
+    pub axis: Option<isize>,
+}
+
+/// Checked kernel wrapper for [`axis_reverse`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AxisReverseKernel {
+    axis: Option<isize>,
+}
+
+impl KernelLifecycle for AxisReverseKernel {
+    type Config = AxisReverseConfig;
+
+    fn try_new(config: Self::Config) -> core::result::Result<Self, ConfigError> {
+        Ok(Self { axis: config.axis })
+    }
+}
+
+impl AxisReverseKernel {
+    /// Reverse lanes along the configured axis.
+    pub fn run<'a, A, S, D>(&self, a: &'a ArrayBase<S, D>) -> Result<ArrayView<'a, A, D>>
+    where
+        S: Data<Elem = A>,
+        D: Dimension,
+        SliceInfo<Vec<SliceInfoElem>, D, D>: SliceArg<D, OutDim = D>,
+    {
+        axis_reverse(a, self.axis)
+    }
+}
 
 /// Internal function for casting into [Axis] and appropriate usize from isize.
 ///
@@ -321,6 +408,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::kernel::{ConfigError, KernelLifecycle};
     use ndarray::{array, Array, ArrayD, IxDyn};
 
     /// Tests on IxN arrays.
@@ -388,5 +476,45 @@ mod test {
                 .unwrap(),
             array![[5], [1]]
         );
+    }
+
+    #[test]
+    fn axis_slice_kernel_validates_step_and_matches_function() {
+        let err = AxisSliceKernel::try_new(AxisSliceConfig {
+            start: None,
+            end: None,
+            step: Some(0),
+            axis: None,
+        })
+        .expect_err("step=0 should fail");
+        assert_eq!(
+            err,
+            ConfigError::InvalidArgument {
+                arg: "step",
+                reason: "step cannot be zero",
+            }
+        );
+
+        let kernel = AxisSliceKernel::try_new(AxisSliceConfig {
+            start: Some(0),
+            end: Some(2),
+            step: Some(1),
+            axis: Some(1),
+        })
+        .expect("kernel should initialize");
+        let a = array![[1, 2, 3], [4, 5, 6]];
+        let from_kernel = kernel.run(&a).expect("kernel run should succeed");
+        let from_fn = axis_slice(&a, Some(0), Some(2), Some(1), Some(1)).unwrap();
+        assert_eq!(from_kernel, from_fn);
+    }
+
+    #[test]
+    fn axis_reverse_kernel_matches_function() {
+        let kernel = AxisReverseKernel::try_new(AxisReverseConfig { axis: Some(1) })
+            .expect("kernel should initialize");
+        let a = array![[1, 2, 3], [4, 5, 6]];
+        let from_kernel = kernel.run(&a).expect("kernel run should succeed");
+        let from_fn = axis_reverse(&a, Some(1)).unwrap();
+        assert_eq!(from_kernel, from_fn);
     }
 }

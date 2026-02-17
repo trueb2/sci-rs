@@ -61,7 +61,10 @@ fn butter_sosfiltfilt_100x(c: &mut Criterion) {
 
     c.bench_function("sosfiltfilt_100x", |b| {
         b.iter(|| {
-            black_box(sosfiltfilt_dyn(sin_wave.iter(), &sos));
+            black_box(
+                sosfiltfilt_dyn(sin_wave.iter(), &sos)
+                    .expect("benchmark input should satisfy sosfiltfilt preconditions"),
+            );
         });
     });
 }
@@ -90,7 +93,10 @@ fn butter_sosfiltfilt_100x_10th(c: &mut Criterion) {
 
     c.bench_function("sosfiltfilt_100x_10th", |b| {
         b.iter(|| {
-            black_box(sosfiltfilt_dyn(sin_wave.iter(), &sos));
+            black_box(
+                sosfiltfilt_dyn(sin_wave.iter(), &sos)
+                    .expect("benchmark input should satisfy sosfiltfilt preconditions"),
+            );
         });
     });
 }
@@ -136,7 +142,10 @@ fn butter_sosfiltfilt_10x(c: &mut Criterion) {
 
     c.bench_function("sosfiltfilt_10x", |b| {
         b.iter(|| {
-            black_box(sosfiltfilt_dyn(sin_wave.iter(), &sos));
+            black_box(
+                sosfiltfilt_dyn(sin_wave.iter(), &sos)
+                    .expect("benchmark input should satisfy sosfiltfilt preconditions"),
+            );
         });
     });
 }
@@ -181,7 +190,10 @@ fn butter_sosfiltfilt_f64(c: &mut Criterion) {
 
     c.bench_function("sosfiltfilt_f64", |b| {
         b.iter(|| {
-            black_box(sosfiltfilt_dyn(sin_wave.iter(), &sos));
+            black_box(
+                sosfiltfilt_dyn(sin_wave.iter(), &sos)
+                    .expect("benchmark input should satisfy sosfiltfilt preconditions"),
+            );
         });
     });
 }
@@ -226,7 +238,10 @@ fn butter_sosfiltfilt_f32(c: &mut Criterion) {
 
     c.bench_function("sosfiltfilt_f32", |b| {
         b.iter(|| {
-            black_box(sosfiltfilt_dyn(sin_wave.iter(), &sos));
+            black_box(
+                sosfiltfilt_dyn(sin_wave.iter(), &sos)
+                    .expect("benchmark input should satisfy sosfiltfilt preconditions"),
+            );
         });
     });
 }

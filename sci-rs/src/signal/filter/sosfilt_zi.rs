@@ -1,8 +1,9 @@
 use core::{iter::Sum, ops::SubAssign};
 use nalgebra::{RealField, Scalar};
 use num_traits::{Float, One, Zero};
+use sci_rs_core::Result;
 
-use crate::signal::filter::lfilter_zi_dyn;
+use crate::signal::filter::lfilter_zi_checked;
 
 use super::design::Sos;
 
@@ -27,13 +28,25 @@ where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
     I: Iterator<Item = &'a mut Sos<F>>,
 {
+    sosfilt_zi_checked::<F, I, S>(s).expect("invalid sosfilt_zi configuration");
+}
+
+///
+/// Checked `sosfilt_zi` entrypoint used by trait-first kernels.
+///
+pub fn sosfilt_zi_checked<'a, F, I, S>(s: I) -> Result<()>
+where
+    F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
+    I: Iterator<Item = &'a mut Sos<F>>,
+{
     let mut scale = F::one();
     for section in s {
-        let zi = lfilter_zi_dyn(&section.b, &section.a);
+        let zi = lfilter_zi_checked(&section.b, &section.a)?;
         section.zi0 = scale * zi[0];
         section.zi1 = scale * zi[1];
         scale *= section.b.iter().cloned().sum::<F>() / section.a.iter().cloned().sum::<F>();
     }
+    Ok(())
 }
 
 #[cfg(test)]
