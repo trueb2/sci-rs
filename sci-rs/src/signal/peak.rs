@@ -210,7 +210,11 @@ where
     }
 }
 
-fn peak_widths_impl<F>(x: &[F], peaks: &[usize], rel_height: F) -> PeakWidthsResult<F>
+fn peak_widths_impl<F>(
+    x: &[F],
+    peaks: &[usize],
+    rel_height: F,
+) -> Result<PeakWidthsResult<F>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
@@ -238,9 +242,13 @@ where
         }
         let l_ip = if l < peak && x[l + 1] != x[l] {
             let denom = x[l + 1] - x[l];
-            F::from_usize(l).expect("index conversion") + (width_height - x[l]) / denom
+            F::from_usize(l).ok_or(ExecInvariantViolation::InvalidState {
+                reason: "peak_widths left index conversion failed",
+            })? + (width_height - x[l]) / denom
         } else {
-            F::from_usize(l).expect("index conversion")
+            F::from_usize(l).ok_or(ExecInvariantViolation::InvalidState {
+                reason: "peak_widths left index conversion failed",
+            })?
         };
 
         let mut r = peak;
@@ -249,9 +257,13 @@ where
         }
         let r_ip = if r > peak && x[r - 1] != x[r] {
             let denom = x[r - 1] - x[r];
-            F::from_usize(r).expect("index conversion") - (width_height - x[r]) / denom
+            F::from_usize(r).ok_or(ExecInvariantViolation::InvalidState {
+                reason: "peak_widths right index conversion failed",
+            })? - (width_height - x[r]) / denom
         } else {
-            F::from_usize(r).expect("index conversion")
+            F::from_usize(r).ok_or(ExecInvariantViolation::InvalidState {
+                reason: "peak_widths right index conversion failed",
+            })?
         };
 
         widths.push(r_ip - l_ip);
@@ -260,36 +272,50 @@ where
         right_ips.push(r_ip);
     }
 
-    PeakWidthsResult {
+    Ok(PeakWidthsResult {
         widths,
         width_heights,
         left_ips,
         right_ips,
-    }
+    })
 }
 
-fn ricker_wavelet<F>(points: usize, a: F) -> Vec<F>
+fn ricker_wavelet<F>(points: usize, a: F) -> Result<Vec<F>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
     if points == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let pi = F::from_f64(core::f64::consts::PI).expect("pi conversion");
-    let two = F::from_f64(2.0).expect("scalar conversion");
-    let three = F::from_f64(3.0).expect("scalar conversion");
-    let quarter = F::from_f64(0.25).expect("scalar conversion");
-    let half = F::from_f64(0.5).expect("scalar conversion");
+    let pi = F::from_f64(core::f64::consts::PI).ok_or(ExecInvariantViolation::InvalidState {
+        reason: "ricker_wavelet pi conversion failed",
+    })?;
+    let two = F::from_f64(2.0).ok_or(ExecInvariantViolation::InvalidState {
+        reason: "ricker_wavelet scalar conversion failed",
+    })?;
+    let three = F::from_f64(3.0).ok_or(ExecInvariantViolation::InvalidState {
+        reason: "ricker_wavelet scalar conversion failed",
+    })?;
+    let quarter = F::from_f64(0.25).ok_or(ExecInvariantViolation::InvalidState {
+        reason: "ricker_wavelet scalar conversion failed",
+    })?;
+    let half = F::from_f64(0.5).ok_or(ExecInvariantViolation::InvalidState {
+        reason: "ricker_wavelet scalar conversion failed",
+    })?;
     let one = F::one();
 
     let norm = two / ((three * a).sqrt() * pi.powf(quarter));
-    let center = F::from_usize(points - 1).expect("scalar conversion") * half;
+    let center = F::from_usize(points - 1).ok_or(ExecInvariantViolation::InvalidState {
+        reason: "ricker_wavelet scalar conversion failed",
+    })? * half;
 
     (0..points)
         .map(|i| {
-            let x = F::from_usize(i).expect("scalar conversion") - center;
+            let x = F::from_usize(i).ok_or(ExecInvariantViolation::InvalidState {
+                reason: "ricker_wavelet scalar conversion failed",
+            })? - center;
             let xa = x / a;
-            norm * (one - xa * xa) * (-(x * x) / (two * a * a)).exp()
+            Ok(norm * (one - xa * xa) * (-(x * x) / (two * a * a)).exp())
         })
         .collect()
 }
@@ -321,20 +347,23 @@ where
     out
 }
 
-fn cwt_impl<F>(x: &[F], widths: &[usize]) -> Vec<Vec<F>>
+fn cwt_impl<F>(x: &[F], widths: &[usize]) -> Result<Vec<Vec<F>>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
     if x.is_empty() || widths.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut rows = Vec::with_capacity(widths.len());
     for &w in widths {
         let n_points = (10 * w).max(3).min(x.len().max(3));
-        let wavelet = ricker_wavelet(n_points, F::from_usize(w).expect("scalar conversion"));
+        let width_f = F::from_usize(w).ok_or(ExecInvariantViolation::InvalidState {
+            reason: "cwt width conversion failed",
+        })?;
+        let wavelet = ricker_wavelet(n_points, width_f)?;
         rows.push(convolve_same(x, &wavelet));
     }
-    rows
+    Ok(rows)
 }
 
 /// Constructor config for [`ArgRelExtremaKernel`].
@@ -617,7 +646,7 @@ where
             });
         }
         let peaks = peaks.read_slice().map_err(ExecInvariantViolation::from)?;
-        Ok(peak_widths_impl(input, peaks, self.rel_height))
+        peak_widths_impl(input, peaks, self.rel_height)
     }
 }
 
@@ -677,7 +706,7 @@ where
                 reason: "cwt input must be non-empty",
             });
         }
-        Ok(cwt_impl(input, &self.widths))
+        cwt_impl(input, &self.widths)
     }
 }
 
@@ -738,7 +767,7 @@ where
             });
         }
 
-        let cwt_map = cwt_impl(input, &self.widths);
+        let cwt_map = cwt_impl(input, &self.widths)?;
         let mut score = vec![F::zero(); input.len()];
         for row in &cwt_map {
             for (i, val) in row.iter().enumerate() {

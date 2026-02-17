@@ -27,14 +27,13 @@ pub(crate) fn savgol_filter_dyn<YI, F>(
     polyorder: usize,
     deriv: Option<usize>,
     delta: Option<F>,
-) -> Vec<F>
+) -> Result<Vec<F>>
 where
     F: RealField + Copy + Sum,
     YI: IntoIterator,
     YI::Item: Borrow<F>,
 {
     savgol_filter_checked(y, window_length, polyorder, deriv, delta)
-        .expect("invalid savgol_filter configuration")
 }
 
 ///
@@ -122,12 +121,11 @@ pub(crate) fn savgol_coeffs_dyn<F>(
     polyorder: usize,
     deriv: Option<usize>,
     delta: Option<F>,
-) -> Vec<F>
+) -> Result<Vec<F>>
 where
     F: RealField + Copy,
 {
     savgol_coeffs_checked(window_length, polyorder, deriv, delta)
-        .expect("invalid savgol_coeffs configuration")
 }
 
 ///
@@ -217,16 +215,20 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     pub fn can_filter() {
-        let v = savgol_filter_dyn((0..100).map(|i| i as f32), 11, 2, None, None);
+        let v = savgol_filter_dyn((0..100).map(|i| i as f32), 11, 2, None, None)
+            .expect("savgol_filter should succeed");
         println!("v = {:?}", v);
 
-        let v = savgol_filter_dyn((0..0).map(|i| i as f32), 11, 2, None, None);
+        let v = savgol_filter_dyn((0..0).map(|i| i as f32), 11, 2, None, None)
+            .expect("savgol_filter should succeed");
         println!("v = {:?}", v);
 
-        let actual_coeff = savgol_coeffs_dyn::<f64>(5, 2, Some(0), Some(1.0));
+        let actual_coeff = savgol_coeffs_dyn::<f64>(5, 2, Some(0), Some(1.0))
+            .expect("savgol_coeffs should succeed");
         println!("coeffs = {:?}", actual_coeff);
         let input = [2.0, 2.0, 5.0, 2.0, 1.0, 0.0, 1.0, 4.0, 9.0];
-        let actual = savgol_filter_dyn(input.iter(), 5, 2, None, None);
+        let actual = savgol_filter_dyn(input.iter(), 5, 2, None, None)
+            .expect("savgol_filter should succeed");
         println!("actual = {:?}", actual);
         let expected = [
             1.74285714, 3.02857143, 3.54285714, 2.85714286, 0.65714286, 0.17142857, 1.0, 4.6,
@@ -237,10 +239,12 @@ mod tests {
             assert_relative_eq!(a, e, max_relative = 1e-5);
         }
 
-        let actual_coeff = savgol_coeffs_dyn::<f64>(5, 2, Some(1), None);
+        let actual_coeff =
+            savgol_coeffs_dyn::<f64>(5, 2, Some(1), None).expect("savgol_coeffs should succeed");
         println!("coeffs = {:?}", actual_coeff);
         let input = [2.0, 2.0, 5.0, 2.0, 1.0, 0.0, 1.0, 4.0, 9.0];
-        let actual = savgol_filter_dyn(input.iter(), 5, 2, Some(1), None);
+        let actual = savgol_filter_dyn(input.iter(), 5, 2, Some(1), None)
+            .expect("savgol_filter should succeed");
         println!("actual = {:?}", actual);
         let expected = [0.6, 0.3, -0.2, -0.8, -1.0, 0.4, 2.0, 2.6, 2.1];
         assert_eq!(actual.len(), expected.len());
@@ -249,7 +253,8 @@ mod tests {
         }
 
         let input = (0..100).map(|i| (3 * i - 2) as f64); //y = 3x - 2
-        let actual = savgol_filter_dyn(input, 51, 5, None, None);
+        let actual =
+            savgol_filter_dyn(input, 51, 5, None, None).expect("savgol_filter should succeed");
         let expected = [
             2.45650177,
             4.06008889,
@@ -361,28 +366,32 @@ mod tests {
 
     #[test]
     pub fn can_coeffs() {
-        let actual = savgol_coeffs_dyn::<f32>(5, 2, None, None);
+        let actual =
+            savgol_coeffs_dyn::<f32>(5, 2, None, None).expect("savgol_coeffs should succeed");
         let expected = [-0.08571429, 0.34285714, 0.48571429, 0.34285714, -0.08571429];
         assert_eq!(actual.len(), expected.len());
         for (a, e) in actual.iter().zip(expected.iter()) {
             assert_relative_eq!(a, e, max_relative = 1e-5);
         }
 
-        let actual = savgol_coeffs_dyn::<f64>(5, 2, Some(0), Some(1.0));
+        let actual = savgol_coeffs_dyn::<f64>(5, 2, Some(0), Some(1.0))
+            .expect("savgol_coeffs should succeed");
         let expected = [-0.08571429, 0.34285714, 0.48571429, 0.34285714, -0.08571429];
         assert_eq!(actual.len(), expected.len());
         for (a, e) in actual.iter().zip(expected.iter()) {
             assert_relative_eq!(a, e, max_relative = 1e-7);
         }
 
-        let actual = savgol_coeffs_dyn::<f64>(4, 2, None, None);
+        let actual =
+            savgol_coeffs_dyn::<f64>(4, 2, None, None).expect("savgol_coeffs should succeed");
         let expected = [-0.0625, 0.5625, 0.5625, -0.0625];
         assert_eq!(actual.len(), expected.len());
         for (a, e) in actual.iter().zip(expected.iter()) {
             assert_relative_eq!(a, e, max_relative = 1e-7);
         }
 
-        let actual = savgol_coeffs_dyn::<f64>(51, 5, None, None);
+        let actual =
+            savgol_coeffs_dyn::<f64>(51, 5, None, None).expect("savgol_coeffs should succeed");
         let expected = [
             0.02784785,
             0.01160327,
@@ -441,7 +450,8 @@ mod tests {
             assert_relative_eq!(a, e, max_relative = 5e-6);
         }
 
-        let actual = savgol_coeffs_dyn::<f64>(21, 8, None, None);
+        let actual =
+            savgol_coeffs_dyn::<f64>(21, 8, None, None).expect("savgol_coeffs should succeed");
         let expected = [
             0.0125937,
             -0.04897551,
@@ -471,14 +481,16 @@ mod tests {
         }
 
         //deriv tests
-        let actual = savgol_coeffs_dyn::<f64>(5, 2, Some(1), Some(1.0));
+        let actual = savgol_coeffs_dyn::<f64>(5, 2, Some(1), Some(1.0))
+            .expect("savgol_coeffs should succeed");
         let expected = [2.0e-1, 1.0e-1, 2.07548111e-16, -1.0e-1, -2.0e-1];
         assert_eq!(actual.len(), expected.len());
         for (a, e) in actual.iter().zip(expected.iter()) {
             assert_relative_eq!(a, e, max_relative = 1e-7);
         }
 
-        let actual = savgol_coeffs_dyn::<f64>(6, 3, Some(1), None);
+        let actual =
+            savgol_coeffs_dyn::<f64>(6, 3, Some(1), None).expect("savgol_coeffs should succeed");
         let expected = [
             -0.09093915,
             0.4130291,
@@ -492,7 +504,8 @@ mod tests {
             assert_relative_eq!(a, e, max_relative = 1e-7);
         }
 
-        let actual = savgol_coeffs_dyn::<f64>(6, 3, Some(2), Some(1.0));
+        let actual = savgol_coeffs_dyn::<f64>(6, 3, Some(2), Some(1.0))
+            .expect("savgol_coeffs should succeed");
         let expected = [
             0.17857143,
             -0.03571429,

@@ -268,7 +268,8 @@ fn biquad_fold(yi: f32, sos: &mut Sos32) -> f32 {
 
 fn _sosfilt32(y: &[f32], sos: &mut [Sos32], z: &mut [f32]) {
     if y.len() != z.len() {
-        panic!();
+        debug_assert_eq!(y.len(), z.len());
+        return;
     }
     if y.is_empty() {
         return;
@@ -363,7 +364,8 @@ fn _sosfilt32(y: &[f32], sos: &mut [Sos32], z: &mut [f32]) {
 
 fn _sosfilt_isize_32<I: Copy + Into<isize>>(y: &[I], sos: &mut [Sos32], z: &mut [f32]) {
     if y.len() != z.len() {
-        panic!();
+        debug_assert_eq!(y.len(), z.len());
+        return;
     }
     if y.is_empty() {
         return;

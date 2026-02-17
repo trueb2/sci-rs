@@ -1,3 +1,4 @@
+use crate::error::Error;
 use nalgebra::RealField;
 use num_traits::{real::Real, MulAdd, Pow, ToPrimitive};
 
@@ -27,25 +28,28 @@ use num_traits::{real::Real, MulAdd, Pow, ToPrimitive};
 /// ```
 /// # See Also
 /// [kaiser_atten], [kaiserord]
-pub(crate) fn kaiser_beta<F>(a: F) -> F
+pub(crate) fn kaiser_beta<F>(a: F) -> core::result::Result<F, Error>
 where
     F: Real + MulAdd<Output = F> + Pow<F, Output = F>,
     <F as Pow<F>>::Output: MulAdd<F, F>,
 {
     if a > F::from(50).unwrap() {
-        F::from(0.1102).unwrap() * (a - F::from(8.7).unwrap())
+        Ok(F::from(0.1102).unwrap() * (a - F::from(8.7).unwrap()))
     } else if a > F::from(21).unwrap() {
         let a = a - F::from(21).unwrap();
 
-        MulAdd::mul_add(
+        Ok(MulAdd::mul_add(
             a.pow(F::from(0.4).unwrap()),
             F::from(0.5842).unwrap(),
             F::from(0.07886).unwrap() * a,
-        )
+        ))
     } else if a > F::zero() {
-        F::zero()
+        Ok(F::zero())
     } else {
-        panic!("Expected a positive input.")
+        Err(Error::InvalidArg {
+            arg: "a".into(),
+            reason: "Expected a positive input.".into(),
+        })
     }
 }
 
@@ -214,18 +218,22 @@ where
 /// --------
 /// [kaiser_beta], [kaiser_atten]
 ///
-pub(crate) fn kaiserord<F>(ripple: F, width: F) -> (F, F)
+pub(crate) fn kaiserord<F>(ripple: F, width: F) -> core::result::Result<(F, F), Error>
 where
     F: Real + MulAdd<Output = F> + Pow<F, Output = F> + RealField,
 {
     let a = Real::abs(ripple);
     if a < F::from(8).unwrap() {
-        panic!("Requested maximum ripple attenuation is too small for the Kaiser formula.");
+        return Err(Error::InvalidArg {
+            arg: "ripple".into(),
+            reason: "Requested maximum ripple attenuation is too small for the Kaiser formula."
+                .into(),
+        });
     }
-    let beta = kaiser_beta(a);
+    let beta = kaiser_beta(a)?;
     let numtaps =
         F::one() + (a - F::from(7.95).unwrap()) / (F::from(2.285).unwrap() * F::pi() * width);
-    (Real::ceil(numtaps), beta)
+    Ok((Real::ceil(numtaps), beta))
 }
 
 #[cfg(test)]
@@ -239,6 +247,9 @@ mod tests {
         let width = 24.;
         let ripple = 65.;
 
-        assert_eq!((167., 6.20426), kaiserord(ripple, width / (0.5 * fs)));
+        assert_eq!(
+            (167., 6.20426),
+            kaiserord(ripple, width / (0.5 * fs)).expect("kaiserord should succeed")
+        );
     }
 }

@@ -54,12 +54,11 @@ pub(crate) fn iirfilter_dyn<F>(
     analog: Option<bool>,
     output: Option<FilterOutputType>,
     fs: Option<F>,
-) -> DigitalFilter<F>
+) -> Result<DigitalFilter<F>, Error>
 where
     F: RealField + Float + Sum,
 {
     iirfilter_checked(order, wn, rp, rs, btype, ftype, analog, output, fs)
-        .expect("invalid iirfilter configuration")
 }
 
 /// Checked IIR design entrypoint used by trait-first kernels.
@@ -266,7 +265,7 @@ where
     Ok(match output {
         FilterOutputType::Zpk => DigitalFilter::Zpk(zpk),
         FilterOutputType::Ba => DigitalFilter::Ba(zpk2tf_dyn(2 * order, &zpk.z, &zpk.p, zpk.k)),
-        FilterOutputType::Sos => DigitalFilter::Sos(zpk2sos_dyn(order, zpk, None, Some(analog))),
+        FilterOutputType::Sos => DigitalFilter::Sos(zpk2sos_dyn(order, zpk, None, Some(analog))?),
     })
 }
 
@@ -417,7 +416,7 @@ pub(crate) fn cheby1_dyn<F>(
     analog: Option<bool>,
     output: Option<FilterOutputType>,
     fs: Option<F>,
-) -> DigitalFilter<F>
+) -> Result<DigitalFilter<F>, Error>
 where
     F: RealField + Float + Sum,
 {
@@ -569,7 +568,7 @@ pub(crate) fn cheby2_dyn<F>(
     analog: Option<bool>,
     output: Option<FilterOutputType>,
     fs: Option<F>,
-) -> DigitalFilter<F>
+) -> Result<DigitalFilter<F>, Error>
 where
     F: RealField + Float + Sum,
 {
@@ -770,7 +769,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Zpk),
             Some(1666.),
-        );
+        )
+        .expect("iirfilter should succeed");
 
         match filter {
             DigitalFilter::Zpk(zpk) => {
@@ -805,7 +805,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Sos),
             Some(1666.),
-        );
+        )
+        .expect("iirfilter should succeed");
 
         match filter {
             DigitalFilter::Sos(sos) => {
@@ -859,7 +860,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Ba),
             Some(1666.),
-        );
+        )
+        .expect("iirfilter should succeed");
 
         match filter {
             DigitalFilter::Ba(ba) => {
@@ -935,7 +937,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Zpk),
             Some(2003.),
-        );
+        )
+        .expect("iirfilter should succeed");
 
         match filter {
             DigitalFilter::Zpk(zpk) => {
@@ -988,7 +991,8 @@ mod tests {
             Some(false),
             Some(FilterOutputType::Zpk),
             Some(2003.),
-        );
+        )
+        .expect("iirfilter should succeed");
 
         match filter {
             DigitalFilter::Zpk(zpk) => {

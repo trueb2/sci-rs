@@ -40,25 +40,29 @@ where
     filtered.into_iter().step_by(down).collect()
 }
 
-fn resample_poly_impl<F>(x: &[F], up: usize, down: usize) -> Vec<F>
+fn resample_poly_impl<F>(x: &[F], up: usize, down: usize) -> Result<Vec<F>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
     if x.is_empty() || up == 0 || down == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     if up == down {
-        return x.to_vec();
+        return Ok(x.to_vec());
     }
 
     let out_len = (x.len() * up).div_ceil(down);
-    let up_f = F::from_usize(up).expect("ratio conversion");
+    let up_f = F::from_usize(up).ok_or(ExecInvariantViolation::InvalidState {
+        reason: "resample_poly ratio conversion failed",
+    })?;
     let mut out = Vec::with_capacity(out_len);
 
     for i in 0..out_len {
         let pos_num = i * down;
         let i0 = pos_num / up;
-        let frac = F::from_usize(pos_num % up).expect("fraction conversion") / up_f;
+        let frac = F::from_usize(pos_num % up).ok_or(ExecInvariantViolation::InvalidState {
+            reason: "resample_poly fraction conversion failed",
+        })? / up_f;
 
         let y = if i0 + 1 < x.len() {
             x[i0] * (F::one() - frac) + x[i0 + 1] * frac
@@ -68,15 +72,15 @@ where
         out.push(y);
     }
 
-    out
+    Ok(out)
 }
 
-fn decimate_impl<F>(x: &[F], q: usize) -> Vec<F>
+fn decimate_impl<F>(x: &[F], q: usize) -> Result<Vec<F>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
     if q == 0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     resample_poly_impl(x, 1, q)
 }
@@ -294,7 +298,7 @@ where
             });
         }
 
-        let y = resample_poly_impl(input, self.up, self.down);
+        let y = resample_poly_impl(input, self.up, self.down)?;
         out_slice.copy_from_slice(&y);
         Ok(())
     }
@@ -309,7 +313,7 @@ where
                 reason: "resample_poly input must be non-empty",
             });
         }
-        Ok(resample_poly_impl(input, self.up, self.down))
+        resample_poly_impl(input, self.up, self.down)
     }
 }
 
@@ -383,7 +387,7 @@ where
             });
         }
 
-        let y = decimate_impl(input, self.q);
+        let y = decimate_impl(input, self.q)?;
         out_slice.copy_from_slice(&y);
         Ok(())
     }
@@ -398,7 +402,7 @@ where
                 reason: "decimate input must be non-empty",
             });
         }
-        Ok(decimate_impl(input, self.q))
+        decimate_impl(input, self.q)
     }
 }
 

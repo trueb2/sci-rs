@@ -454,7 +454,7 @@ where
         x.get_window()
     } else if let Some(width) = width {
         let atten = kaiser_atten(numtaps.try_into().unwrap(), width / nyq);
-        let beta = kaiser_beta(atten);
+        let beta = kaiser_beta(atten)?;
         let k = get_window(GetWindowBuilder::Kaiser { beta }, numtaps, Some(false));
         k.get_window()
     } else {
@@ -489,11 +489,10 @@ where
         tmp
     };
     if !cutoff.len().is_multiple_of(2) {
-        unreachable!();
-        // return Err(Error::InvalidArg {
-        //     arg: "cutoff".into(),
-        //     reason: "Parity of cutoff given for type of Filter is incorrect.".into(),
-        // });
+        return Err(Error::InvalidArg {
+            arg: "cutoff".into(),
+            reason: "Parity of cutoff given for type of filter is incorrect.".into(),
+        });
     }
     let bands: Vec<_> = cutoff.chunks_exact(2).collect();
     let scale_frequency = {

@@ -1073,7 +1073,13 @@ where
         validate_conjugate_pairs(&zpk.z, tol, "zpk.z")?;
         validate_conjugate_pairs(&zpk.p, tol, "zpk.p")?;
 
-        Ok(zpk2sos_dyn(self.order, zpk, self.pairing, self.analog))
+        zpk2sos_dyn(self.order, zpk, self.pairing, self.analog).map_err(|_| {
+            ConfigError::InvalidArgument {
+                arg: "zpk",
+                reason: "zpk2sos conversion failed",
+            }
+            .into()
+        })
     }
 }
 

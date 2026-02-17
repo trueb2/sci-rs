@@ -81,14 +81,13 @@ where
                 w.extend(w.clone().iter().rev());
                 w
             }
-            1 => {
+            _ => {
                 let mut w: Vec<W> = n
                     .map(|n| W::from(2).unwrap() * n / (m_f + W::one()))
                     .collect();
                 w.extend(w.clone().iter().rev().skip(1));
                 w
             }
-            _ => panic!(),
         };
 
         truncate(w, needs_trunc)

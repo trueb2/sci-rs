@@ -5,7 +5,11 @@ use crate::error::Error;
 
 #[cfg(feature = "alloc")]
 pub(crate) fn relative_degree_dyn<F>(zeros: &[Complex<F>], poles: &[Complex<F>]) -> usize {
-    relative_degree_checked(zeros, poles).expect("invalid relative degree configuration")
+    debug_assert!(
+        poles.len() >= zeros.len(),
+        "improper transfer function; poles must be >= zeros"
+    );
+    poles.len().saturating_sub(zeros.len())
 }
 
 /// Checked relative-degree helper returning a deterministic argument error.

@@ -150,15 +150,15 @@ macro_rules! lfilter_for_dim {
 
                     // if zi.ndim != x.ndim { return Err(...) } is signature asserted.
 
-                    let mut expected_shape: [usize; $N] = x.shape().try_into().unwrap();
-                    *expected_shape // expected_shape[axis] = b.shape[0] - 1
-                        .get_mut(axis_inner)
-                        .expect("invalid axis_inner") = b
-                        .shape()
-                        .first()
-                        .expect("Could not get 0th axis len of b")
-                        .checked_sub(1)
-                        .expect("underflowing subtract");
+                    let mut expected_shape: [usize; $N] = ndarray_shape_as_array_st(&x);
+                    let b_axis_len = b.len_of(Axis(0)).checked_sub(1).ok_or(Error::InvalidArg {
+                        arg: "b".into(),
+                        reason: "b must have at least one coefficient".into(),
+                    })?;
+                    *expected_shape.get_mut(axis_inner).ok_or(Error::InvalidArg {
+                        arg: "axis".into(),
+                        reason: "invalid axis index".into(),
+                    })? = b_axis_len;
 
                     if *zi.shape() != expected_shape {
                         let strides: [Ix; $N] = {
@@ -495,14 +495,16 @@ where
         // if zi.ndim != x.ndim { return Err(...) } is signature asserted.
 
         let mut expected_shape: Vec<usize> = x.shape().to_vec();
-        *expected_shape // expected_shape[axis] = b.shape[0] - 1
+        let b_axis_len = b.len_of(Axis(0)).checked_sub(1).ok_or(Error::InvalidArg {
+            arg: "b".into(),
+            reason: "b must have at least one coefficient".into(),
+        })?;
+        *expected_shape
             .get_mut(axis_inner)
-            .expect("invalid axis_inner") = b
-            .shape()
-            .first()
-            .expect("Could not get 0th axis len of b")
-            .checked_sub(1)
-            .expect("underflowing subtract");
+            .ok_or(Error::InvalidArg {
+                arg: "axis".into(),
+                reason: "invalid axis index".into(),
+            })? = b_axis_len;
 
         if *zi.shape() != expected_shape {
             let strides: Vec<Ix> = {

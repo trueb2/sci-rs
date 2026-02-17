@@ -413,7 +413,7 @@ macro_rules! filtfilt_for_dim {
                 let (edge, ext) = validate_pad(padding, x.view(), axis, a.len().max(b.len()))?;
 
                 let zi: Array<T, Dim<[Ix; $N]>> = {
-                    let mut zi = lfilter_zi_dyn(b.as_slice().unwrap(), a.as_slice().unwrap());
+                    let mut zi = lfilter_zi_dyn(b.as_slice().unwrap(), a.as_slice().unwrap())?;
                     let mut sh = [1; $N];
                     sh[axis] = zi.len(); // .size()?
 

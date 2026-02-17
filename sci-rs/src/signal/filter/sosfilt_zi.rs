@@ -23,12 +23,12 @@ use alloc::vec::Vec;
 /// <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.lfilter_zi.html#scipy.signal.lfilter_zi>
 ///
 ///
-pub(crate) fn sosfilt_zi_dyn<'a, F, I>(s: I)
+pub(crate) fn sosfilt_zi_dyn<'a, F, I>(s: I) -> Result<()>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
     I: IntoIterator<Item = &'a mut Sos<F>>,
 {
-    sosfilt_zi_checked::<F, I>(s).expect("invalid sosfilt_zi configuration");
+    sosfilt_zi_checked::<F, I>(s)
 }
 
 ///
@@ -123,7 +123,7 @@ mod tests {
         );
 
         // Compute zi inplace on Sos
-        sosfilt_zi_dyn::<_, _>(sos.iter_mut());
+        sosfilt_zi_dyn::<_, _>(sos.iter_mut()).expect("sosfilt_zi should succeed");
 
         for (i, row) in expected_zi.row_iter().enumerate() {
             let section = sos[i];

@@ -1,4 +1,4 @@
-use crate::kernel::KernelLifecycle;
+use crate::kernel::{ExecInvariantViolation, KernelLifecycle};
 use crate::signal::traits::{
     ChirpWave1D, GaussPulseWave1D, SawtoothWave1D, SquareWave1D, SweepPolyWave1D, UnitImpulse1D,
 };
@@ -13,7 +13,10 @@ pub use kernels::*;
 ///
 /// The square wave has period `2*pi`, has value `+1` from `0` to
 /// `2*pi*duty`, and `-1` from `2*pi*duty` to `2*pi`.
-pub(crate) fn square<F, S, D>(t: &ArrayBase<S, D>, duty: F) -> Array<F, D>
+pub(crate) fn square<F, S, D>(
+    t: &ArrayBase<S, D>,
+    duty: F,
+) -> Result<Array<F, D>, ExecInvariantViolation>
 where
     F: RealField + Copy,
     S: Data<Elem = F>,
@@ -22,20 +25,21 @@ where
     #[cfg(feature = "alloc")]
     {
         let kernel = SquareWaveKernel::try_new(SquareWaveConfig { duty })
-            .expect("duty must be in [0, 1] for square wave generation");
+            .map_err(ExecInvariantViolation::from)?;
         let flat_t = t.iter().copied().collect::<alloc::vec::Vec<_>>();
-        let flat_y = kernel
-            .run_alloc(&flat_t)
-            .expect("square wave generation failed");
-        Array::from_shape_vec(t.raw_dim(), flat_y)
-            .expect("square wave output shape conversion failed")
+        let flat_y = kernel.run_alloc(&flat_t)?;
+        Array::from_shape_vec(t.raw_dim(), flat_y).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "square wave output shape conversion failed",
+            }
+        })
     }
 
     #[cfg(not(feature = "alloc"))]
     {
         let kernel = SquareWaveKernel::try_new(SquareWaveConfig { duty })
-            .expect("duty must be in [0, 1] for square wave generation");
-        t.mapv(|v| kernel.sample(v))
+            .map_err(ExecInvariantViolation::from)?;
+        Ok(t.mapv(|v| kernel.sample(v)))
     }
 }
 
@@ -43,7 +47,10 @@ where
 ///
 /// The waveform has period `2*pi`, rises from `-1` to `1` over
 /// `[0, width*2*pi)`, and falls from `1` to `-1` over `[width*2*pi, 2*pi)`.
-pub(crate) fn sawtooth<F, S, D>(t: &ArrayBase<S, D>, width: F) -> Array<F, D>
+pub(crate) fn sawtooth<F, S, D>(
+    t: &ArrayBase<S, D>,
+    width: F,
+) -> Result<Array<F, D>, ExecInvariantViolation>
 where
     F: RealField + Copy,
     S: Data<Elem = F>,
@@ -52,20 +59,21 @@ where
     #[cfg(feature = "alloc")]
     {
         let kernel = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width })
-            .expect("width must be in [0, 1] for sawtooth generation");
+            .map_err(ExecInvariantViolation::from)?;
         let flat_t = t.iter().copied().collect::<alloc::vec::Vec<_>>();
-        let flat_y = kernel
-            .run_alloc(&flat_t)
-            .expect("sawtooth wave generation failed");
-        Array::from_shape_vec(t.raw_dim(), flat_y)
-            .expect("sawtooth wave output shape conversion failed")
+        let flat_y = kernel.run_alloc(&flat_t)?;
+        Array::from_shape_vec(t.raw_dim(), flat_y).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "sawtooth wave output shape conversion failed",
+            }
+        })
     }
 
     #[cfg(not(feature = "alloc"))]
     {
         let kernel = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width })
-            .expect("width must be in [0, 1] for sawtooth generation");
-        t.mapv(|v| kernel.sample(v))
+            .map_err(ExecInvariantViolation::from)?;
+        Ok(t.mapv(|v| kernel.sample(v)))
     }
 }
 
@@ -81,7 +89,7 @@ pub(crate) fn chirp<F, S, D>(
     method: ChirpMethod,
     phi_deg: F,
     vertex_zero: bool,
-) -> Array<F, D>
+) -> Result<Array<F, D>, ExecInvariantViolation>
 where
     F: RealField + Copy + FromPrimitive,
     S: Data<Elem = F>,
@@ -97,10 +105,14 @@ where
             phi_deg,
             vertex_zero,
         })
-        .expect("invalid chirp config");
+        .map_err(ExecInvariantViolation::from)?;
         let flat_t = t.iter().copied().collect::<alloc::vec::Vec<_>>();
-        let flat_y = kernel.run_alloc(&flat_t).expect("chirp generation failed");
-        Array::from_shape_vec(t.raw_dim(), flat_y).expect("chirp output shape conversion failed")
+        let flat_y = kernel.run_alloc(&flat_t)?;
+        Array::from_shape_vec(t.raw_dim(), flat_y).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "chirp output shape conversion failed",
+            }
+        })
     }
 
     #[cfg(not(feature = "alloc"))]
@@ -113,8 +125,8 @@ where
             phi_deg,
             vertex_zero,
         })
-        .expect("invalid chirp config");
-        t.mapv(|v| kernel.sample(v))
+        .map_err(ExecInvariantViolation::from)?;
+        Ok(t.mapv(|v| kernel.sample(v)))
     }
 }
 
@@ -133,7 +145,12 @@ where
 }
 
 /// Return a Gaussian-modulated sinusoid (in-phase component).
-pub(crate) fn gausspulse<F, S, D>(t: &ArrayBase<S, D>, fc: F, bw: F, bwr: F) -> Array<F, D>
+pub(crate) fn gausspulse<F, S, D>(
+    t: &ArrayBase<S, D>,
+    fc: F,
+    bw: F,
+    bwr: F,
+) -> Result<Array<F, D>, ExecInvariantViolation>
 where
     F: RealField + Copy + FromPrimitive,
     S: Data<Elem = F>,
@@ -142,20 +159,21 @@ where
     #[cfg(feature = "alloc")]
     {
         let kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })
-            .expect("invalid gausspulse config");
+            .map_err(ExecInvariantViolation::from)?;
         let flat_t = t.iter().copied().collect::<alloc::vec::Vec<_>>();
-        let flat_y = kernel
-            .run_alloc(&flat_t)
-            .expect("gausspulse generation failed");
-        Array::from_shape_vec(t.raw_dim(), flat_y)
-            .expect("gausspulse output shape conversion failed")
+        let flat_y = kernel.run_alloc(&flat_t)?;
+        Array::from_shape_vec(t.raw_dim(), flat_y).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "gausspulse output shape conversion failed",
+            }
+        })
     }
 
     #[cfg(not(feature = "alloc"))]
     {
         let kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })
-            .expect("invalid gausspulse config");
-        t.mapv(|v| kernel.sample(v))
+            .map_err(ExecInvariantViolation::from)?;
+        Ok(t.mapv(|v| kernel.sample(v)))
     }
 }
 
@@ -169,14 +187,14 @@ pub(crate) fn gausspulse_with_options<F, S, D>(
     bwr: F,
     retquad: bool,
     retenv: bool,
-) -> GaussPulseParts<F, D>
+) -> Result<GaussPulseParts<F, D>, ExecInvariantViolation>
 where
     F: RealField + Copy + FromPrimitive,
     S: Data<Elem = F>,
     D: Dimension,
 {
     let kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })
-        .expect("invalid gausspulse config");
+        .map_err(ExecInvariantViolation::from)?;
     let y_i = t.mapv(|v| kernel.sample(v));
     let y_q = if retquad {
         Some(t.mapv(|v| kernel.sample_quadrature(v)))
@@ -188,23 +206,32 @@ where
     } else {
         None
     };
-    GaussPulseParts { y_i, y_q, y_env }
+    Ok(GaussPulseParts { y_i, y_q, y_env })
 }
 
 /// Return cutoff time for `gausspulse` at reference level `tpr` in dB.
-pub(crate) fn gausspulse_cutoff<F>(fc: F, bw: F, bwr: F, tpr: F) -> F
+pub(crate) fn gausspulse_cutoff<F>(
+    fc: F,
+    bw: F,
+    bwr: F,
+    tpr: F,
+) -> Result<F, ExecInvariantViolation>
 where
     F: RealField + Copy + FromPrimitive,
 {
     let kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })
-        .expect("invalid gausspulse config");
+        .map_err(ExecInvariantViolation::from)?;
     kernel
         .cutoff_time(tpr)
-        .expect("invalid reference level for gausspulse cutoff")
+        .map_err(ExecInvariantViolation::from)
 }
 
 /// Return a polynomial-frequency swept cosine waveform.
-pub(crate) fn sweep_poly<F, S, D>(t: &ArrayBase<S, D>, poly: &[F], phi_deg: F) -> Array<F, D>
+pub(crate) fn sweep_poly<F, S, D>(
+    t: &ArrayBase<S, D>,
+    poly: &[F],
+    phi_deg: F,
+) -> Result<Array<F, D>, ExecInvariantViolation>
 where
     F: RealField + Copy + FromPrimitive,
     S: Data<Elem = F>,
@@ -213,20 +240,21 @@ where
     #[cfg(feature = "alloc")]
     {
         let kernel = SweepPolyKernel::try_new(SweepPolyConfig { poly, phi_deg })
-            .expect("invalid sweep_poly config");
+            .map_err(ExecInvariantViolation::from)?;
         let flat_t = t.iter().copied().collect::<alloc::vec::Vec<_>>();
-        let flat_y = kernel
-            .run_alloc(&flat_t)
-            .expect("sweep_poly generation failed");
-        Array::from_shape_vec(t.raw_dim(), flat_y)
-            .expect("sweep_poly output shape conversion failed")
+        let flat_y = kernel.run_alloc(&flat_t)?;
+        Array::from_shape_vec(t.raw_dim(), flat_y).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "sweep_poly output shape conversion failed",
+            }
+        })
     }
 
     #[cfg(not(feature = "alloc"))]
     {
         let kernel = SweepPolyKernel::try_new(SweepPolyConfig { poly, phi_deg })
-            .expect("invalid sweep_poly config");
-        t.mapv(|v| kernel.sample(v))
+            .map_err(ExecInvariantViolation::from)?;
+        Ok(t.mapv(|v| kernel.sample(v)))
     }
 }
 
@@ -234,7 +262,10 @@ where
 ///
 /// `len` defines output length. `idx` selects the index whose value is `1`;
 /// when omitted, index `0` is used.
-pub(crate) fn unit_impulse<F>(len: usize, idx: Option<usize>) -> Array1<F>
+pub(crate) fn unit_impulse<F>(
+    len: usize,
+    idx: Option<usize>,
+) -> Result<Array1<F>, ExecInvariantViolation>
 where
     F: RealField + Copy,
 {
@@ -242,13 +273,11 @@ where
         len,
         idx: idx.unwrap_or(0),
     })
-    .expect("invalid unit impulse config");
+    .map_err(ExecInvariantViolation::from)?;
 
     let mut out = Array1::from_elem(len, F::zero());
-    kernel
-        .run_into(&mut out)
-        .expect("unit impulse generation failed");
-    out
+    kernel.run_into(&mut out)?;
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -267,7 +296,7 @@ mod tests {
             -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0,
             -1.0, -1.0, -1.0, -1.0, -1.0, -1.0,
         ]);
-        let result = square(&t, 0.0);
+        let result = square(&t, 0.0).expect("square should succeed");
         assert_vec_eq_f32(result, expected);
     }
 
@@ -281,7 +310,7 @@ mod tests {
             1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
             1.0, 1.0, 1.0,
         ]);
-        let result = square(&t, 1.0);
+        let result = square(&t, 1.0).expect("square should succeed");
         assert_vec_eq_f32(result, expected);
     }
 
@@ -304,9 +333,9 @@ mod tests {
             1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0,
             1.0, 1.0, 1.0, 1.0,
         ]);
-        let result_03 = square(&t, 0.3);
-        let result_05 = square(&t, 0.5);
-        let result_07 = square(&t, 0.7);
+        let result_03 = square(&t, 0.3).expect("square should succeed");
+        let result_05 = square(&t, 0.5).expect("square should succeed");
+        let result_07 = square(&t, 0.7).expect("square should succeed");
         assert_vec_eq_f32(result_03, expected_03);
         assert_vec_eq_f32(result_05, expected_05);
         assert_vec_eq_f32(result_07, expected_07);
@@ -328,7 +357,7 @@ mod tests {
             [[1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, -1.0, -1.0, -1.0]],
             [[-1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, -1.0, -1.0]],
         ]);
-        let result = square(&t, 0.67);
+        let result = square(&t, 0.67).expect("square should succeed");
         assert_vec_eq_f32(result, expected);
     }
 
@@ -384,10 +413,26 @@ mod tests {
             -0.4853518991481,
         ]);
 
-        assert_vec_eq_f64(sawtooth(&t, 0.0), expected_w0, 1e-9);
-        assert_vec_eq_f64(sawtooth(&t, 0.3), expected_w03, 1e-9);
-        assert_vec_eq_f64(sawtooth(&t, 0.5), expected_w05, 1e-9);
-        assert_vec_eq_f64(sawtooth(&t, 1.0), expected_w1, 1e-9);
+        assert_vec_eq_f64(
+            sawtooth(&t, 0.0).expect("sawtooth should succeed"),
+            expected_w0,
+            1e-9,
+        );
+        assert_vec_eq_f64(
+            sawtooth(&t, 0.3).expect("sawtooth should succeed"),
+            expected_w03,
+            1e-9,
+        );
+        assert_vec_eq_f64(
+            sawtooth(&t, 0.5).expect("sawtooth should succeed"),
+            expected_w05,
+            1e-9,
+        );
+        assert_vec_eq_f64(
+            sawtooth(&t, 1.0).expect("sawtooth should succeed"),
+            expected_w1,
+            1e-9,
+        );
     }
 
     #[test]
@@ -428,22 +473,26 @@ mod tests {
         ]);
 
         assert_vec_eq_f64(
-            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Linear, 15.0, false),
+            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Linear, 15.0, false)
+                .expect("chirp should succeed"),
             expected_linear,
             1e-9,
         );
         assert_vec_eq_f64(
-            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Quadratic, 15.0, false),
+            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Quadratic, 15.0, false)
+                .expect("chirp should succeed"),
             expected_quadratic,
             1e-9,
         );
         assert_vec_eq_f64(
-            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Logarithmic, 15.0, false),
+            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Logarithmic, 15.0, false)
+                .expect("chirp should succeed"),
             expected_log,
             1e-9,
         );
         assert_vec_eq_f64(
-            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Hyperbolic, 15.0, false),
+            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Hyperbolic, 15.0, false)
+                .expect("chirp should succeed"),
             expected_hyp,
             1e-9,
         );
@@ -463,17 +512,19 @@ mod tests {
             -9.480977524614e-21,
             2.016362296697e-10,
         ]);
-        let result = gausspulse(&t, 5.0, 0.5, -6.0);
+        let result = gausspulse(&t, 5.0, 0.5, -6.0).expect("gausspulse should succeed");
         assert_vec_eq_f64(result, expected, 1e-12);
 
-        let cutoff = gausspulse_cutoff(5.0f64, 0.5, -6.0, -60.0);
+        let cutoff =
+            gausspulse_cutoff(5.0f64, 0.5, -6.0, -60.0).expect("gausspulse cutoff should succeed");
         assert_abs_diff_eq!(cutoff, 0.5562590089628512, epsilon = 1e-12);
     }
 
     #[test]
     fn test_gausspulse_with_options_returns_quadrature_and_envelope() {
         let t = arr1(&[-0.5, 0.0, 0.5]);
-        let parts = gausspulse_with_options(&t, 5.0f64, 0.5, -6.0, true, true);
+        let parts = gausspulse_with_options(&t, 5.0f64, 0.5, -6.0, true, true)
+            .expect("gausspulse_with_options should succeed");
         let expected_i = arr1(&[-0.003768271121, 1.0, -0.003768271121]);
         let expected_q = arr1(&[-2.307400583318e-18, 0.0, 2.307400583318e-18]);
         let expected_env = arr1(&[0.003768271121, 1.0, 0.003768271121]);
@@ -495,19 +546,19 @@ mod tests {
             -0.41628079226,
             -0.408977593638,
         ]);
-        let result = sweep_poly(&t, &poly, 15.0);
+        let result = sweep_poly(&t, &poly, 15.0).expect("sweep_poly should succeed");
         assert_vec_eq_f64(result, expected, 1e-12);
     }
 
     #[test]
     fn test_unit_impulse_default_and_offset_index() {
-        let default = unit_impulse::<f64>(7, None);
+        let default = unit_impulse::<f64>(7, None).expect("unit_impulse should succeed");
         assert_eq!(default.to_vec(), vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
 
-        let shifted = unit_impulse::<f64>(7, Some(2));
+        let shifted = unit_impulse::<f64>(7, Some(2)).expect("unit_impulse should succeed");
         assert_eq!(shifted.to_vec(), vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
 
-        let centered = unit_impulse::<f64>(8, Some(8 / 2));
+        let centered = unit_impulse::<f64>(8, Some(8 / 2)).expect("unit_impulse should succeed");
         assert_eq!(
             centered.to_vec(),
             vec![0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]

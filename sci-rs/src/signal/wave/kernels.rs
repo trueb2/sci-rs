@@ -275,8 +275,8 @@ where
 
     fn phase_at(&self, t: F) -> F {
         let two_pi = F::two_pi();
-        let half = F::from_f64(0.5).expect("scalar conversion");
-        let third = F::from_f64(1.0 / 3.0).expect("scalar conversion");
+        let half = F::one() / (F::one() + F::one());
+        let third = F::one() / (F::one() + F::one() + F::one());
 
         match self.method {
             ChirpMethod::Linear => {
@@ -356,7 +356,10 @@ where
             ChirpMethod::Linear | ChirpMethod::Quadratic => {}
         }
 
-        let deg = F::from_f64(180.0).expect("scalar conversion");
+        let deg = F::from_u8(180).ok_or(ConfigError::InvalidArgument {
+            arg: "phi_deg",
+            reason: "phi conversion failed",
+        })?;
         Ok(Self {
             f0: config.f0,
             t1: config.t1,
@@ -463,8 +466,14 @@ where
                 reason: "reference level for time cutoff must be < 0 dB",
             });
         }
-        let twenty = F::from_f64(20.0).expect("scalar conversion");
-        let ten = F::from_f64(10.0).expect("scalar conversion");
+        let twenty = F::from_u8(20).ok_or(ConfigError::InvalidArgument {
+            arg: "tpr",
+            reason: "scalar conversion failed",
+        })?;
+        let ten = F::from_u8(10).ok_or(ConfigError::InvalidArgument {
+            arg: "tpr",
+            reason: "scalar conversion failed",
+        })?;
         let tref = ten.powf(tpr / twenty);
         Ok((-(tref.ln()) / self.a).sqrt())
     }
@@ -496,9 +505,18 @@ where
             });
         }
 
-        let twenty = F::from_f64(20.0).expect("scalar conversion");
-        let four = F::from_f64(4.0).expect("scalar conversion");
-        let ten = F::from_f64(10.0).expect("scalar conversion");
+        let twenty = F::from_u8(20).ok_or(ConfigError::InvalidArgument {
+            arg: "bwr",
+            reason: "scalar conversion failed",
+        })?;
+        let four = F::from_u8(4).ok_or(ConfigError::InvalidArgument {
+            arg: "bwr",
+            reason: "scalar conversion failed",
+        })?;
+        let ten = F::from_u8(10).ok_or(ConfigError::InvalidArgument {
+            arg: "bwr",
+            reason: "scalar conversion failed",
+        })?;
         let ref_level = ten.powf(config.bwr / twenty);
         let num = (F::pi() * config.fc * config.bw).powi(2);
         let a = -num / (four * ref_level.ln());
@@ -574,10 +592,11 @@ where
         // to evaluate the integral term-by-term as sum(c_k * t^(k+1)/(k+1)).
         let mut integral = F::zero();
         let mut t_pow = t;
-        for (k, coeff) in self.poly.iter().rev().enumerate() {
-            let denom = F::from_usize(k + 1).expect("scalar conversion");
+        let mut denom = F::one();
+        for coeff in self.poly.iter().rev() {
             integral += (*coeff * t_pow) / denom;
             t_pow *= t;
+            denom += F::one();
         }
         F::two_pi() * integral
     }
@@ -598,7 +617,10 @@ where
         if config.poly.is_empty() {
             return Err(ConfigError::EmptyInput { arg: "poly" });
         }
-        let deg = F::from_f64(180.0).expect("scalar conversion");
+        let deg = F::from_u8(180).ok_or(ConfigError::InvalidArgument {
+            arg: "phi_deg",
+            reason: "phi conversion failed",
+        })?;
         Ok(Self {
             poly: config.poly,
             phi_rad: config.phi_deg * F::pi() / deg,
@@ -753,7 +775,7 @@ mod tests {
         let input = arr1(&[
             -4.452f32, -4.182, -3.663, -3.307, -2.995, -2.482, -2.46, -1.929, -1.823, -1.44,
         ]);
-        let expected = square(&input, 0.67f32);
+        let expected = square(&input, 0.67f32).expect("square reference should succeed");
         let actual = kernel.run_alloc(&input).expect("kernel should run");
         actual
             .iter()
@@ -766,7 +788,7 @@ mod tests {
         let kernel = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width: 0.3f32 })
             .expect("kernel should initialize");
         let input = arr1(&[-4.0f32, -1.2, -0.1, 0.0, 0.3, 1.7, 3.14, 4.2, 6.1, 7.9]);
-        let expected = sawtooth(&input, 0.3f32);
+        let expected = sawtooth(&input, 0.3f32).expect("sawtooth reference should succeed");
         let actual = kernel.run_alloc(&input).expect("kernel should run");
         actual
             .iter()
@@ -795,7 +817,8 @@ mod tests {
             ChirpMethod::Quadratic,
             15.0,
             false,
-        );
+        )
+        .expect("chirp reference should succeed");
         let actual = kernel.run_alloc(&input).expect("kernel should run");
         actual
             .iter()
@@ -812,7 +835,8 @@ mod tests {
         })
         .expect("kernel should initialize");
         let input = arr1(&[-1.0f64, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0]);
-        let expected = gausspulse(&input, 5.0f64, 0.5, -6.0);
+        let expected =
+            gausspulse(&input, 5.0f64, 0.5, -6.0).expect("gausspulse reference should succeed");
         let actual = kernel.run_alloc(&input).expect("kernel should run");
         actual
             .iter()
@@ -829,7 +853,8 @@ mod tests {
         })
         .expect("kernel should initialize");
         let input = arr1(&[0.0f64, 0.5, 1.0, 1.5, 2.0, 2.5]);
-        let expected = sweep_poly(&input, &poly, 15.0);
+        let expected =
+            sweep_poly(&input, &poly, 15.0).expect("sweep_poly reference should succeed");
         let actual = kernel.run_alloc(&input).expect("kernel should run");
         actual
             .iter()
@@ -841,7 +866,8 @@ mod tests {
     fn unit_impulse_kernel_matches_ndarray_unit_impulse() {
         let kernel = UnitImpulseKernel::try_new(UnitImpulseConfig { len: 7, idx: 2 })
             .expect("kernel should initialize");
-        let expected = unit_impulse::<f64>(7, Some(2));
+        let expected =
+            unit_impulse::<f64>(7, Some(2)).expect("unit_impulse reference should succeed");
         let actual: Vec<f64> = kernel.run_alloc().expect("kernel should run");
         actual
             .iter()
@@ -1044,7 +1070,8 @@ mod tests {
         })
         .expect("kernel should initialize");
         let cutoff = kernel.cutoff_time(-60.0).expect("cutoff should compute");
-        let expected = gausspulse_cutoff(5.0f64, 0.5, -6.0, -60.0);
+        let expected = gausspulse_cutoff(5.0f64, 0.5, -6.0, -60.0)
+            .expect("gausspulse cutoff reference should succeed");
         assert_abs_diff_eq!(cutoff, expected, epsilon = 1e-12);
     }
 
