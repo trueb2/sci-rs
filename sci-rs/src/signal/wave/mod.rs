@@ -1,5 +1,7 @@
 use crate::kernel::KernelLifecycle;
-use crate::signal::traits::{ChirpWave1D, SawtoothWave1D, SquareWave1D, UnitImpulse1D};
+use crate::signal::traits::{
+    ChirpWave1D, GaussPulseWave1D, SawtoothWave1D, SquareWave1D, SweepPolyWave1D, UnitImpulse1D,
+};
 use nalgebra::RealField;
 use ndarray::{Array, Array1, ArrayBase, Data, Dimension};
 use num_traits::FromPrimitive;
@@ -112,6 +114,118 @@ where
             vertex_zero,
         })
         .expect("invalid chirp config");
+        t.mapv(|v| kernel.sample(v))
+    }
+}
+
+/// Optional components produced by [`gausspulse_with_options`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct GaussPulseParts<F, D>
+where
+    D: Dimension,
+{
+    /// In-phase (real) component.
+    pub y_i: Array<F, D>,
+    /// Quadrature component when requested.
+    pub y_q: Option<Array<F, D>>,
+    /// Envelope component when requested.
+    pub y_env: Option<Array<F, D>>,
+}
+
+/// Return a Gaussian-modulated sinusoid (in-phase component).
+pub fn gausspulse<F, S, D>(t: &ArrayBase<S, D>, fc: F, bw: F, bwr: F) -> Array<F, D>
+where
+    F: RealField + Copy + FromPrimitive,
+    S: Data<Elem = F>,
+    D: Dimension,
+{
+    #[cfg(feature = "alloc")]
+    {
+        let kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })
+            .expect("invalid gausspulse config");
+        let flat_t = t.iter().copied().collect::<alloc::vec::Vec<_>>();
+        let flat_y = kernel
+            .run_alloc(&flat_t)
+            .expect("gausspulse generation failed");
+        Array::from_shape_vec(t.raw_dim(), flat_y)
+            .expect("gausspulse output shape conversion failed")
+    }
+
+    #[cfg(not(feature = "alloc"))]
+    {
+        let kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })
+            .expect("invalid gausspulse config");
+        t.mapv(|v| kernel.sample(v))
+    }
+}
+
+/// Return selected components of a Gaussian-modulated sinusoid.
+///
+/// This corresponds to SciPy's `retquad`/`retenv` switches.
+pub fn gausspulse_with_options<F, S, D>(
+    t: &ArrayBase<S, D>,
+    fc: F,
+    bw: F,
+    bwr: F,
+    retquad: bool,
+    retenv: bool,
+) -> GaussPulseParts<F, D>
+where
+    F: RealField + Copy + FromPrimitive,
+    S: Data<Elem = F>,
+    D: Dimension,
+{
+    let kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })
+        .expect("invalid gausspulse config");
+    let y_i = t.mapv(|v| kernel.sample(v));
+    let y_q = if retquad {
+        Some(t.mapv(|v| kernel.sample_quadrature(v)))
+    } else {
+        None
+    };
+    let y_env = if retenv {
+        Some(t.mapv(|v| kernel.sample_envelope(v)))
+    } else {
+        None
+    };
+    GaussPulseParts { y_i, y_q, y_env }
+}
+
+/// Return cutoff time for `gausspulse` at reference level `tpr` in dB.
+pub fn gausspulse_cutoff<F>(fc: F, bw: F, bwr: F, tpr: F) -> F
+where
+    F: RealField + Copy + FromPrimitive,
+{
+    let kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })
+        .expect("invalid gausspulse config");
+    kernel
+        .cutoff_time(tpr)
+        .expect("invalid reference level for gausspulse cutoff")
+}
+
+/// Return a polynomial-frequency swept cosine waveform.
+pub fn sweep_poly<F, S, D>(t: &ArrayBase<S, D>, poly: &[F], phi_deg: F) -> Array<F, D>
+where
+    F: RealField + Copy + FromPrimitive,
+    S: Data<Elem = F>,
+    D: Dimension,
+{
+    #[cfg(feature = "alloc")]
+    {
+        let kernel = SweepPolyKernel::try_new(SweepPolyConfig { poly, phi_deg })
+            .expect("invalid sweep_poly config");
+        let flat_t = t.iter().copied().collect::<alloc::vec::Vec<_>>();
+        let flat_y = kernel
+            .run_alloc(&flat_t)
+            .expect("sweep_poly generation failed");
+        Array::from_shape_vec(t.raw_dim(), flat_y)
+            .expect("sweep_poly output shape conversion failed")
+    }
+
+    #[cfg(not(feature = "alloc"))]
+    {
+        let kernel = SweepPolyKernel::try_new(SweepPolyConfig { poly, phi_deg })
+            .expect("invalid sweep_poly config");
         t.mapv(|v| kernel.sample(v))
     }
 }
@@ -333,6 +447,56 @@ mod tests {
             expected_hyp,
             1e-9,
         );
+    }
+
+    #[test]
+    fn test_gausspulse_real_component_and_cutoff() {
+        let t = arr1(&[-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0]);
+        let expected = arr1(&[
+            2.016362296697e-10,
+            -9.480977524614e-21,
+            -3.768271120988e-3,
+            7.585538132647e-17,
+            1.0,
+            7.585538132647e-17,
+            -3.768271120988e-3,
+            -9.480977524614e-21,
+            2.016362296697e-10,
+        ]);
+        let result = gausspulse(&t, 5.0, 0.5, -6.0);
+        assert_vec_eq_f64(result, expected, 1e-12);
+
+        let cutoff = gausspulse_cutoff(5.0f64, 0.5, -6.0, -60.0);
+        assert_abs_diff_eq!(cutoff, 0.5562590089628512, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn test_gausspulse_with_options_returns_quadrature_and_envelope() {
+        let t = arr1(&[-0.5, 0.0, 0.5]);
+        let parts = gausspulse_with_options(&t, 5.0f64, 0.5, -6.0, true, true);
+        let expected_i = arr1(&[-0.003768271121, 1.0, -0.003768271121]);
+        let expected_q = arr1(&[-2.307400583318e-18, 0.0, 2.307400583318e-18]);
+        let expected_env = arr1(&[0.003768271121, 1.0, 0.003768271121]);
+
+        assert_vec_eq_f64(parts.y_i, expected_i, 1e-12);
+        assert_vec_eq_f64(parts.y_q.expect("quadrature"), expected_q, 1e-12);
+        assert_vec_eq_f64(parts.y_env.expect("envelope"), expected_env, 1e-12);
+    }
+
+    #[test]
+    fn test_sweep_poly_against_known_reference_values() {
+        let t = arr1(&[0.0, 0.5, 1.0, 1.5, 2.0, 2.5]);
+        let poly = [0.025, -0.36, 1.25, 2.0];
+        let expected = arr1(&[
+            0.965925826289,
+            0.406886116156,
+            -0.945234103797,
+            0.892265903895,
+            -0.41628079226,
+            -0.408977593638,
+        ]);
+        let result = sweep_poly(&t, &poly, 15.0);
+        assert_vec_eq_f64(result, expected, 1e-12);
     }
 
     #[test]

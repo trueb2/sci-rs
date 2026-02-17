@@ -1,7 +1,9 @@
 //! Trait-first kernels for waveform generation.
 
 use crate::kernel::{ConfigError, ExecInvariantViolation, KernelLifecycle, Read1D, Write1D};
-use crate::signal::traits::{ChirpWave1D, SawtoothWave1D, SquareWave1D, UnitImpulse1D};
+use crate::signal::traits::{
+    ChirpWave1D, GaussPulseWave1D, SawtoothWave1D, SquareWave1D, SweepPolyWave1D, UnitImpulse1D,
+};
 use nalgebra::RealField;
 use num_traits::{FromPrimitive, One, Zero};
 
@@ -402,6 +404,244 @@ where
     }
 }
 
+/// Constructor config for [`GaussPulseKernel`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GaussPulseConfig<F>
+where
+    F: RealField + Copy,
+{
+    /// Center frequency.
+    pub fc: F,
+    /// Fractional bandwidth.
+    pub bw: F,
+    /// Reference dB level for bandwidth.
+    pub bwr: F,
+}
+
+/// Trait-first 1D Gaussian-modulated sinusoid generator.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GaussPulseKernel<F>
+where
+    F: RealField + Copy,
+{
+    fc: F,
+    a: F,
+}
+
+impl<F> GaussPulseKernel<F>
+where
+    F: RealField + Copy + FromPrimitive,
+{
+    fn envelope(&self, t: F) -> F {
+        (-(self.a * t * t)).exp()
+    }
+
+    /// Compute in-phase sample.
+    pub(super) fn sample(&self, t: F) -> F {
+        let two_pi = F::two_pi();
+        let yenv = self.envelope(t);
+        yenv * (two_pi * self.fc * t).cos()
+    }
+
+    /// Compute quadrature sample.
+    pub(super) fn sample_quadrature(&self, t: F) -> F {
+        let two_pi = F::two_pi();
+        let yenv = self.envelope(t);
+        yenv * (two_pi * self.fc * t).sin()
+    }
+
+    /// Compute envelope sample.
+    pub(super) fn sample_envelope(&self, t: F) -> F {
+        self.envelope(t)
+    }
+
+    /// Compute cutoff time for a target reference level in dB.
+    pub fn cutoff_time(&self, tpr: F) -> Result<F, ConfigError> {
+        if tpr >= F::zero() {
+            return Err(ConfigError::InvalidArgument {
+                arg: "tpr",
+                reason: "reference level for time cutoff must be < 0 dB",
+            });
+        }
+        let twenty = F::from_f64(20.0).expect("scalar conversion");
+        let ten = F::from_f64(10.0).expect("scalar conversion");
+        let tref = ten.powf(tpr / twenty);
+        Ok((-(tref.ln()) / self.a).sqrt())
+    }
+}
+
+impl<F> KernelLifecycle for GaussPulseKernel<F>
+where
+    F: RealField + Copy + FromPrimitive,
+{
+    type Config = GaussPulseConfig<F>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.fc < F::zero() {
+            return Err(ConfigError::InvalidArgument {
+                arg: "fc",
+                reason: "center frequency must be >= 0",
+            });
+        }
+        if config.bw <= F::zero() {
+            return Err(ConfigError::InvalidArgument {
+                arg: "bw",
+                reason: "fractional bandwidth must be > 0",
+            });
+        }
+        if config.bwr >= F::zero() {
+            return Err(ConfigError::InvalidArgument {
+                arg: "bwr",
+                reason: "reference level for bandwidth must be < 0 dB",
+            });
+        }
+
+        let twenty = F::from_f64(20.0).expect("scalar conversion");
+        let four = F::from_f64(4.0).expect("scalar conversion");
+        let ten = F::from_f64(10.0).expect("scalar conversion");
+        let ref_level = ten.powf(config.bwr / twenty);
+        let num = (F::pi() * config.fc * config.bw).powi(2);
+        let a = -num / (four * ref_level.ln());
+
+        Ok(Self { fc: config.fc, a })
+    }
+}
+
+impl<F> GaussPulseWave1D<F> for GaussPulseKernel<F>
+where
+    F: RealField + Copy + FromPrimitive,
+{
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        O: Write1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        let out = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out.len() != input.len() {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: input.len(),
+                got: out.len(),
+            });
+        }
+        out.iter_mut()
+            .zip(input.iter())
+            .for_each(|(out, t)| *out = self.sample(*t));
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<F>, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(input.iter().map(|t| self.sample(*t)).collect())
+    }
+}
+
+/// Constructor config for [`SweepPolyKernel`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SweepPolyConfig<'a, F>
+where
+    F: RealField + Copy,
+{
+    /// Polynomial coefficients in descending power order.
+    pub poly: &'a [F],
+    /// Phase offset in degrees.
+    pub phi_deg: F,
+}
+
+/// Trait-first 1D polynomial-frequency sweep generator.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SweepPolyKernel<'a, F>
+where
+    F: RealField + Copy,
+{
+    poly: &'a [F],
+    phi_rad: F,
+}
+
+impl<'a, F> SweepPolyKernel<'a, F>
+where
+    F: RealField + Copy + FromPrimitive,
+{
+    fn integrated_phase(&self, t: F) -> F {
+        // `poly` stores coefficients in descending power. We iterate in reverse
+        // to evaluate the integral term-by-term as sum(c_k * t^(k+1)/(k+1)).
+        let mut integral = F::zero();
+        let mut t_pow = t;
+        for (k, coeff) in self.poly.iter().rev().enumerate() {
+            let denom = F::from_usize(k + 1).expect("scalar conversion");
+            integral += (*coeff * t_pow) / denom;
+            t_pow *= t;
+        }
+        F::two_pi() * integral
+    }
+
+    /// Compute sweep sample.
+    pub(super) fn sample(&self, t: F) -> F {
+        (self.integrated_phase(t) + self.phi_rad).cos()
+    }
+}
+
+impl<'a, F> KernelLifecycle for SweepPolyKernel<'a, F>
+where
+    F: RealField + Copy + FromPrimitive,
+{
+    type Config = SweepPolyConfig<'a, F>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.poly.is_empty() {
+            return Err(ConfigError::EmptyInput { arg: "poly" });
+        }
+        let deg = F::from_f64(180.0).expect("scalar conversion");
+        Ok(Self {
+            poly: config.poly,
+            phi_rad: config.phi_deg * F::pi() / deg,
+        })
+    }
+}
+
+impl<'a, F> SweepPolyWave1D<F> for SweepPolyKernel<'a, F>
+where
+    F: RealField + Copy + FromPrimitive,
+{
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        O: Write1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        let out = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out.len() != input.len() {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: input.len(),
+                got: out.len(),
+            });
+        }
+        out.iter_mut()
+            .zip(input.iter())
+            .for_each(|(out, t)| *out = self.sample(*t));
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<F>, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(input.iter().map(|t| self.sample(*t)).collect())
+    }
+}
+
 /// Constructor config for [`UnitImpulseKernel`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnitImpulseConfig {
@@ -492,12 +732,17 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        ChirpConfig, ChirpKernel, ChirpMethod, SawtoothWaveConfig, SawtoothWaveKernel,
-        SquareWaveConfig, SquareWaveKernel, UnitImpulseConfig, UnitImpulseKernel,
+        ChirpConfig, ChirpKernel, ChirpMethod, GaussPulseConfig, GaussPulseKernel,
+        SawtoothWaveConfig, SawtoothWaveKernel, SquareWaveConfig, SquareWaveKernel,
+        SweepPolyConfig, SweepPolyKernel, UnitImpulseConfig, UnitImpulseKernel,
     };
     use crate::kernel::{ConfigError, KernelLifecycle};
-    use crate::signal::traits::{ChirpWave1D, SawtoothWave1D, SquareWave1D, UnitImpulse1D};
-    use crate::signal::wave::{chirp, sawtooth, square, unit_impulse};
+    use crate::signal::traits::{
+        ChirpWave1D, GaussPulseWave1D, SawtoothWave1D, SquareWave1D, SweepPolyWave1D, UnitImpulse1D,
+    };
+    use crate::signal::wave::{
+        chirp, gausspulse, gausspulse_cutoff, sawtooth, square, sweep_poly, unit_impulse,
+    };
     use approx::assert_abs_diff_eq;
     use ndarray::{arr1, Array1};
 
@@ -559,6 +804,40 @@ mod tests {
     }
 
     #[test]
+    fn gausspulse_kernel_matches_ndarray_gausspulse() {
+        let kernel = GaussPulseKernel::try_new(GaussPulseConfig {
+            fc: 5.0f64,
+            bw: 0.5,
+            bwr: -6.0,
+        })
+        .expect("kernel should initialize");
+        let input = arr1(&[-1.0f64, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0]);
+        let expected = gausspulse(&input, 5.0f64, 0.5, -6.0);
+        let actual = kernel.run_alloc(&input).expect("kernel should run");
+        actual
+            .iter()
+            .zip(expected.iter())
+            .for_each(|(a, b)| assert_abs_diff_eq!(*a, *b, epsilon = 1e-12));
+    }
+
+    #[test]
+    fn sweep_poly_kernel_matches_ndarray_sweep_poly() {
+        let poly = [0.025f64, -0.36, 1.25, 2.0];
+        let kernel = SweepPolyKernel::try_new(SweepPolyConfig {
+            poly: &poly,
+            phi_deg: 15.0,
+        })
+        .expect("kernel should initialize");
+        let input = arr1(&[0.0f64, 0.5, 1.0, 1.5, 2.0, 2.5]);
+        let expected = sweep_poly(&input, &poly, 15.0);
+        let actual = kernel.run_alloc(&input).expect("kernel should run");
+        actual
+            .iter()
+            .zip(expected.iter())
+            .for_each(|(a, b)| assert_abs_diff_eq!(*a, *b, epsilon = 1e-12));
+    }
+
+    #[test]
     fn unit_impulse_kernel_matches_ndarray_unit_impulse() {
         let kernel = UnitImpulseKernel::try_new(UnitImpulseConfig { len: 7, idx: 2 })
             .expect("kernel should initialize");
@@ -612,6 +891,38 @@ mod tests {
             method: ChirpMethod::Linear,
             phi_deg: 0.0,
             vertex_zero: true,
+        })
+        .expect("kernel should initialize");
+        let input = [0.0f64, 0.5, 1.0, 1.5];
+        let mut out = Array1::from(vec![0.0f64; input.len()]);
+        kernel
+            .run_into(&input, &mut out)
+            .expect("run_into should succeed");
+        assert!(out.iter().all(|v| !v.is_nan()));
+    }
+
+    #[test]
+    fn gausspulse_kernel_run_into_supports_ndarray_output() {
+        let kernel = GaussPulseKernel::try_new(GaussPulseConfig {
+            fc: 5.0f64,
+            bw: 0.5,
+            bwr: -6.0,
+        })
+        .expect("kernel should initialize");
+        let input = [0.0f64, 0.25, 0.5, 0.75];
+        let mut out = Array1::from(vec![0.0f64; input.len()]);
+        kernel
+            .run_into(&input, &mut out)
+            .expect("run_into should succeed");
+        assert!(out.iter().all(|v| !v.is_nan()));
+    }
+
+    #[test]
+    fn sweep_poly_kernel_run_into_supports_ndarray_output() {
+        let poly = [0.025f64, -0.36, 1.25, 2.0];
+        let kernel = SweepPolyKernel::try_new(SweepPolyConfig {
+            poly: &poly,
+            phi_deg: 15.0,
         })
         .expect("kernel should initialize");
         let input = [0.0f64, 0.5, 1.0, 1.5];
@@ -708,6 +1019,63 @@ mod tests {
                 reason: "hyperbolic chirp requires nonzero f0 and f1",
             }
         );
+    }
+
+    #[test]
+    fn gausspulse_kernel_validates_constructor_rules_and_cutoff() {
+        let err = GaussPulseKernel::try_new(GaussPulseConfig {
+            fc: -1.0f64,
+            bw: 0.5,
+            bwr: -6.0,
+        })
+        .expect_err("negative fc must fail");
+        assert_eq!(
+            err,
+            ConfigError::InvalidArgument {
+                arg: "fc",
+                reason: "center frequency must be >= 0",
+            }
+        );
+
+        let kernel = GaussPulseKernel::try_new(GaussPulseConfig {
+            fc: 5.0f64,
+            bw: 0.5,
+            bwr: -6.0,
+        })
+        .expect("kernel should initialize");
+        let cutoff = kernel.cutoff_time(-60.0).expect("cutoff should compute");
+        let expected = gausspulse_cutoff(5.0f64, 0.5, -6.0, -60.0);
+        assert_abs_diff_eq!(cutoff, expected, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn sweep_poly_kernel_validates_constructor_and_output_length() {
+        let err = SweepPolyKernel::try_new(SweepPolyConfig {
+            poly: &[] as &[f64],
+            phi_deg: 0.0,
+        })
+        .expect_err("empty poly must fail");
+        assert_eq!(err, ConfigError::EmptyInput { arg: "poly" });
+
+        let poly = [1.0f64, 2.0];
+        let kernel = SweepPolyKernel::try_new(SweepPolyConfig {
+            poly: &poly,
+            phi_deg: 0.0,
+        })
+        .expect("kernel should initialize");
+        let input = [0.0f64, 0.5, 1.0];
+        let mut out = [0.0f64; 2];
+        let err = kernel
+            .run_into(&input, &mut out)
+            .expect_err("short output should fail");
+        assert!(matches!(
+            err,
+            crate::kernel::ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: 3,
+                got: 2
+            }
+        ));
     }
 
     #[test]

@@ -23,15 +23,17 @@ use sci_rs::signal::filter::{
 };
 use sci_rs::signal::resample::{resample as resample_baseline, ResampleConfig, ResampleKernel};
 use sci_rs::signal::traits::{
-    ChirpWave1D, Convolve1D, Correlate1D, FiltFilt1D, FirWinDesign, IirDesign, LFilter1D,
-    LFilterZiDesign1D, Resample1D, SavgolCoeffsDesign, SavgolFilter1D, SawtoothWave1D, SosFilt1D,
-    SosFiltFilt1D, SosFiltZiDesign1D, SquareWave1D, UnitImpulse1D, WindowGenerate,
+    ChirpWave1D, Convolve1D, Correlate1D, FiltFilt1D, FirWinDesign, GaussPulseWave1D, IirDesign,
+    LFilter1D, LFilterZiDesign1D, Resample1D, SavgolCoeffsDesign, SavgolFilter1D, SawtoothWave1D,
+    SosFilt1D, SosFiltFilt1D, SosFiltZiDesign1D, SquareWave1D, SweepPolyWave1D, UnitImpulse1D,
+    WindowGenerate,
 };
 use sci_rs::signal::wave::{
-    chirp as chirp_baseline, sawtooth as sawtooth_baseline, square as square_baseline,
-    unit_impulse as unit_impulse_baseline, ChirpConfig, ChirpKernel, ChirpMethod,
-    SawtoothWaveConfig, SawtoothWaveKernel, SquareWaveConfig, SquareWaveKernel, UnitImpulseConfig,
-    UnitImpulseKernel,
+    chirp as chirp_baseline, gausspulse as gausspulse_baseline, sawtooth as sawtooth_baseline,
+    square as square_baseline, sweep_poly as sweep_poly_baseline,
+    unit_impulse as unit_impulse_baseline, ChirpConfig, ChirpKernel, ChirpMethod, GaussPulseConfig,
+    GaussPulseKernel, SawtoothWaveConfig, SawtoothWaveKernel, SquareWaveConfig, SquareWaveKernel,
+    SweepPolyConfig, SweepPolyKernel, UnitImpulseConfig, UnitImpulseKernel,
 };
 use sci_rs::signal::windows::{
     get_window as get_window_baseline, GetWindow, GetWindowBuilder, WindowBuilderOwned,
@@ -94,6 +96,19 @@ def _compute():
             method=p["method"],
             phi=float(p["phi_deg"]),
             vertex_zero=bool(p["vertex_zero"]),
+        )
+    if op == "gausspulse":
+        return scipy.signal.gausspulse(
+            _as_array("t"),
+            fc=float(p["fc"]),
+            bw=float(p["bw"]),
+            bwr=float(p["bwr"]),
+        )
+    if op == "sweep_poly":
+        return scipy.signal.sweep_poly(
+            _as_array("t"),
+            np.asarray(p["poly"], dtype=float),
+            phi=float(p["phi_deg"]),
         )
     if op == "unit_impulse":
         idx = p.get("idx")
@@ -562,6 +577,105 @@ fn run_contracts() -> Result<()> {
                 phi_deg,
                 vertex_zero,
             );
+            Ok(())
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // Gaussian pulse (in-phase)
+    {
+        let case_id = "gausspulse_f64";
+        let fc = 5.0f64;
+        let bw = 0.5f64;
+        let bwr = -6.0f64;
+        let t: Vec<f64> = (0..512).map(|i| (i as f64 - 256.0) / 128.0).collect();
+
+        let kernel = GaussPulseKernel::try_new(GaussPulseConfig { fc, bw, bwr })?;
+        let candidate = kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("gausspulse candidate execution failed: {e}"))?;
+        let baseline = gausspulse_baseline(&Array1::from_vec(t.clone()), fc, bw, bwr).to_vec();
+        let py = python_signal_eval(
+            &python_bin,
+            "gausspulse",
+            json!({
+                "t": t,
+                "fc": fc,
+                "bw": bw,
+                "bwr": bwr,
+            }),
+            220,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(180, || {
+            kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("gausspulse candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(180, || {
+            let _ = gausspulse_baseline(&Array1::from_vec(t.clone()), fc, bw, bwr);
+            Ok(())
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // Polynomial sweep
+    {
+        let case_id = "sweep_poly_f64";
+        let phi_deg = 15.0f64;
+        let poly = vec![0.025f64, -0.36, 1.25, 2.0];
+        let t: Vec<f64> = (0..512).map(|i| i as f64 / 128.0).collect();
+
+        let kernel = SweepPolyKernel::try_new(SweepPolyConfig {
+            poly: &poly,
+            phi_deg,
+        })?;
+        let candidate = kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("sweep_poly candidate execution failed: {e}"))?;
+        let baseline = sweep_poly_baseline(&Array1::from_vec(t.clone()), &poly, phi_deg).to_vec();
+        let py = python_signal_eval(
+            &python_bin,
+            "sweep_poly",
+            json!({
+                "t": t,
+                "poly": poly,
+                "phi_deg": phi_deg,
+            }),
+            180,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(140, || {
+            kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("sweep_poly candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(140, || {
+            let _ = sweep_poly_baseline(&Array1::from_vec(t.clone()), &poly, phi_deg);
             Ok(())
         })?;
 

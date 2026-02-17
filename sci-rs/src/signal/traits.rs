@@ -129,6 +129,36 @@ pub trait UnitImpulse1D<T> {
     fn run_alloc(&self) -> Result<Vec<T>, ExecInvariantViolation>;
 }
 
+/// 1D Gaussian-pulse generation capability.
+pub trait GaussPulseWave1D<T> {
+    /// Generate a Gaussian-modulated sinusoid into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Generate a Gaussian-modulated sinusoid and allocate output.
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D polynomial-frequency sweep generation capability.
+pub trait SweepPolyWave1D<T> {
+    /// Generate a polynomial sweep into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Generate a polynomial sweep and allocate output.
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
 /// 1D `lfilter` capability.
 pub trait LFilter1D<T> {
     /// Run filtering into a caller-provided output buffer.

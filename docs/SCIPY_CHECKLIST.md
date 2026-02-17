@@ -18,7 +18,7 @@ Generated from local SciPy `1.14.1` by `scripts/generate_scipy_checklist_invento
 - required-now count: `160`
 - deferred-pythonism count: `2`
 - merged count: `0`
-- active count: `4`
+- active count: `6`
 
 ## Status Legend
 
@@ -136,7 +136,7 @@ Generated from local SciPy `1.14.1` by `scripts/generate_scipy_checklist_invento
 | freqz_zpk | scipy.signal | function | required_now | filter_design | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.freqz_zpk.html | _filter_design.py:L491 |  |  |  |  |  |  |  |
 | gammatone | scipy.signal | function | required_now | filter_design | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.gammatone.html | _filter_design.py:L5394 |  |  |  |  |  |  |  |
 | gauss_spline | scipy.signal | function | required_now | splines | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.gauss_spline.html | _bsplines.py:L74 |  |  |  |  |  |  |  |
-| gausspulse | scipy.signal | function | required_now | waveforms | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.gausspulse.html | _waveforms.py:L163 |  |  |  |  |  |  |  |
+| gausspulse | scipy.signal | function | required_now | waveforms | impl | codex | codex/refactor-scipy-waveforms-batch2 | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.gausspulse.html | _waveforms.py:L163 | GaussPulseWave1D<T>/GaussPulseConfig<T>/GaussPulseKernel<T> | sci-rs/src/signal/wave/mod.rs;sci-rs/src/signal/wave/kernels.rs |  |  |  |  | implemented in-phase output plus quadrature/envelope options and cutoff helper |
 | get_window | scipy.signal | function | required_now | helpers | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.get_window.html | _windows.py:L2261 |  |  |  |  |  |  |  |
 | group_delay | scipy.signal | function | required_now | filter_design | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.group_delay.html | _filter_design.py:L600 |  |  |  |  |  |  |  |
 | hilbert | scipy.signal | function | required_now | filtering | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.hilbert.html | _signaltools.py:L2287 |  |  |  |  |  |  |  |
@@ -207,7 +207,7 @@ Generated from local SciPy `1.14.1` by `scripts/generate_scipy_checklist_invento
 | ss2zpk | scipy.signal | function | required_now | lti | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.ss2zpk.html | _lti_conversion.py:L305 |  |  |  |  |  |  |  |
 | step | scipy.signal | function | required_now | lti | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.step.html | _ltisys.py:L2077 |  |  |  |  |  |  |  |
 | stft | scipy.signal | function | required_now | spectral | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.stft.html | _spectral_py.py:L1058 |  |  |  |  |  |  |  |
-| sweep_poly | scipy.signal | function | required_now | waveforms | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sweep_poly.html | _waveforms.py:L475 |  |  |  |  |  |  |  |
+| sweep_poly | scipy.signal | function | required_now | waveforms | impl | codex | codex/refactor-scipy-waveforms-batch2 | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sweep_poly.html | _waveforms.py:L475 | SweepPolyWave1D<T>/SweepPolyConfig<'a,T>/SweepPolyKernel<'a,T> | sci-rs/src/signal/wave/mod.rs;sci-rs/src/signal/wave/kernels.rs |  |  |  |  | polynomial-coefficient frequency sweep implemented |
 | symiirorder1 | scipy.signal | function | required_now | filtering | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.symiirorder1.html | builtin |  |  |  |  |  |  |  |
 | symiirorder2 | scipy.signal | function | required_now | filtering | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.symiirorder2.html | builtin |  |  |  |  |  |  |  |
 | test | scipy.signal | function | deferred_pythonism | helpers | deferred_pythonism |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.test.html | builtin |  |  |  |  |  |  |  |
