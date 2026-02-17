@@ -65,12 +65,12 @@ Legend:
 | stats | `ZScoreNormalize1D<T>` | yes | yes | yes | `ZScoreKernel` |
 | stats | `ModZScoreNormalize1D<T>` | yes | yes | yes | `ModZScoreKernel` |
 | linalg | `CompanionBuild1D<T>` | yes | yes | yes | `CompanionKernel` |
-| migration | legacy free functions cleanup | yes | yes | yes | compatibility shims are kernel-first where feasible; checked wrappers added (`iirfilter/butter/cplx/relative_degree` included) |
+| migration | legacy free functions cleanup | yes | yes | yes | public entrypoints are kernel-backed checked APIs; silent fallback wrappers removed from migrated paths |
 | contract | local contract runner (`xtask`) | yes | yes | yes | local-only artifacts under `target/contracts` |
 
-## Legacy Shim Status
+## Function Entrypoint Status
 
-| Legacy API | Trait-first replacement | shimmed | tested |
+| Legacy API | Trait-first replacement | checked | tested |
 | --- | --- | --- | --- |
 | `convolve` | `ConvolveKernel` + `Convolve1D` | yes | yes |
 | `correlate` | `CorrelateKernel` + `Correlate1D` | yes | yes |
@@ -87,11 +87,11 @@ Legend:
 
 ## Public Interface Sweep (Complete)
 
-This sweep is complete for the refactor scope; remaining legacy entrypoints are compatibility shims.
+This sweep is complete for the refactor scope; public entrypoints execute through checked trait-first kernels.
 
 | Module | Public API | trait-first status | Notes |
 | --- | --- | --- | --- |
-| `signal/filter` | `lfilter` | complete | compatibility shim includes kernel-first 1D fast path with contiguous-slice no-copy route |
+| `signal/filter` | `lfilter` | complete | kernel-first 1D fast path with contiguous-slice no-copy route |
 | `signal/filter` | `sosfilt_dyn` / `sosfilt_item` / `sosfilt_st` | complete | checked slice wrappers and trait-first kernels available |
 | `signal/filter` | `sosfiltfilt_dyn` | complete | checked slice API + trait-first kernel parity (kernel path avoids iterator re-collect) |
 | `signal/filter` | `savgol_filter_dyn` / `savgol_coeffs_dyn` | complete | checked slice APIs and trait-first kernels (`SavgolFilterKernel`, `SavgolCoeffsKernel`) |
@@ -99,10 +99,10 @@ This sweep is complete for the refactor scope; remaining legacy entrypoints are 
 | `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | complete | checked helper APIs and axis kernels landed |
 | `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | complete | covered by `IirFilterKernel` plus dedicated zpk helper kernels; checked `iirfilter/butter` entrypoints now available |
 | `signal/wave` | `square`/`sawtooth`/`chirp`/`gausspulse`/`sweep_poly` (ndarray N-D) + `unit_impulse` (1D) | complete | waveform APIs now route through trait-first kernels |
-| `signal/multirate` | `upfirdn` / `resample_poly` / `decimate` | complete | trait-first kernels (`UpFirDnKernel`, `ResamplePolyKernel`, `DecimateKernel`) plus compatibility shims |
+| `signal/multirate` | `upfirdn` / `resample_poly` / `decimate` | complete | checked trait-first kernels (`UpFirDnKernel`, `ResamplePolyKernel`, `DecimateKernel`) |
 | `signal/peak` | `argrelextrema` / `argrelmax` / `argrelmin` / `find_peaks` / `peak_prominences` / `peak_widths` / `cwt` / `find_peaks_cwt` | complete | trait-first kernels added with constructor and execution contract tests for each capability |
 | `signal/spectral` | `periodogram` / `welch` / `csd` / `coherence` / `stft` / `istft` / `spectrogram` / `freqz` / `sosfreqz` | complete | trait-first kernelized spectral path with config validation and output-shape invariant tests |
-| `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | complete | trait-first stats kernels exist and are parity-tested; free functions are compatibility shims |
+| `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | complete | trait-first stats kernels exist and are parity-tested; entrypoints are checked wrappers |
 | `linalg` | `companion_dyn` | complete | checked kernel-backed construction path added |
 
 ## Acceptance Gate Tracker

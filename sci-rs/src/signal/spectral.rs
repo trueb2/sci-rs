@@ -34,6 +34,9 @@ pub struct SpectrogramResult {
     pub sxx: Vec<Vec<f64>>,
 }
 
+/// Tuple output used by the public `spectrogram` convenience entrypoint.
+pub type SpectrogramTuple = (Vec<f64>, Vec<f64>, Vec<Vec<f64>>);
+
 fn hann_window(n: usize) -> Vec<f64> {
     if n == 0 {
         return Vec::new();
@@ -296,11 +299,8 @@ fn istft_impl(
     fs: f64,
     nperseg: usize,
     noverlap: usize,
-) -> (Vec<f64>, Vec<f64>) {
-    let n_frames = match validate_istft_input(zxx, nperseg, noverlap) {
-        Ok(n_frames) => n_frames,
-        Err(_) => return (Vec::new(), Vec::new()),
-    };
+) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation> {
+    let n_frames = validate_istft_input(zxx, nperseg, noverlap)?;
 
     let n_freq = nperseg / 2 + 1;
     let hop = nperseg - noverlap;
@@ -332,7 +332,7 @@ fn istft_impl(
     }
 
     let t = (0..out_len).map(|i| i as f64 / fs).collect();
-    (t, y)
+    Ok((t, y))
 }
 
 fn spectrogram_impl(x: &[f64], fs: f64, nperseg: usize, noverlap: usize) -> SpectrogramResult {
@@ -983,7 +983,7 @@ impl Istft1D for IstftKernel {
             });
         }
 
-        let (tt, yy) = istft_impl(zxx, self.fs, self.nperseg, self.noverlap);
+        let (tt, yy) = istft_impl(zxx, self.fs, self.nperseg, self.noverlap)?;
         t_out.copy_from_slice(&tt);
         y_out.copy_from_slice(&yy);
         Ok(())
@@ -993,8 +993,7 @@ impl Istft1D for IstftKernel {
         &self,
         zxx: &[Vec<Complex<f64>>],
     ) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation> {
-        validate_istft_input(zxx, self.nperseg, self.noverlap)?;
-        Ok(istft_impl(zxx, self.fs, self.nperseg, self.noverlap))
+        istft_impl(zxx, self.fs, self.nperseg, self.noverlap)
     }
 }
 
@@ -1257,52 +1256,61 @@ impl SosFreqz1D for SosFreqzKernel {
 }
 
 /// Estimate one-sided power spectral density using a periodogram.
-pub fn periodogram(x: &[f64], fs: f64) -> (Vec<f64>, Vec<f64>) {
-    let kernel = match PeriodogramKernel::try_new(PeriodogramConfig { fs }) {
-        Ok(kernel) => kernel,
-        Err(_) => return (Vec::new(), Vec::new()),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+pub fn periodogram(x: &[f64], fs: f64) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation> {
+    let kernel = PeriodogramKernel::try_new(PeriodogramConfig { fs })
+        .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 /// Estimate PSD with Welch's method using Hann windows and 50% overlap.
-pub fn welch(x: &[f64], fs: f64, nperseg: usize) -> (Vec<f64>, Vec<f64>) {
-    let kernel = match WelchKernel::try_new(WelchConfig { fs, nperseg }) {
-        Ok(kernel) => kernel,
-        Err(_) => return (Vec::new(), Vec::new()),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+pub fn welch(
+    x: &[f64],
+    fs: f64,
+    nperseg: usize,
+) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation> {
+    let kernel =
+        WelchKernel::try_new(WelchConfig { fs, nperseg }).map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 /// Estimate cross power spectral density with Welch averaging.
-pub fn csd(x: &[f64], y: &[f64], fs: f64, nperseg: usize) -> (Vec<f64>, Vec<Complex<f64>>) {
-    let kernel = match CsdKernel::try_new(CsdConfig { fs, nperseg }) {
-        Ok(kernel) => kernel,
-        Err(_) => return (Vec::new(), Vec::new()),
-    };
-    kernel.run_alloc(x, y).unwrap_or_default()
+pub fn csd(
+    x: &[f64],
+    y: &[f64],
+    fs: f64,
+    nperseg: usize,
+) -> Result<(Vec<f64>, Vec<Complex<f64>>), ExecInvariantViolation> {
+    let kernel =
+        CsdKernel::try_new(CsdConfig { fs, nperseg }).map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x, y)
 }
 
 /// Estimate magnitude-squared coherence from Welch/CSD estimates.
-pub fn coherence(x: &[f64], y: &[f64], fs: f64, nperseg: usize) -> (Vec<f64>, Vec<f64>) {
-    let kernel = match CoherenceKernel::try_new(CoherenceConfig { fs, nperseg }) {
-        Ok(kernel) => kernel,
-        Err(_) => return (Vec::new(), Vec::new()),
-    };
-    kernel.run_alloc(x, y).unwrap_or_default()
+pub fn coherence(
+    x: &[f64],
+    y: &[f64],
+    fs: f64,
+    nperseg: usize,
+) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation> {
+    let kernel = CoherenceKernel::try_new(CoherenceConfig { fs, nperseg })
+        .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x, y)
 }
 
 /// Short-time Fourier transform (one-sided).
-pub fn stft(x: &[f64], fs: f64, nperseg: usize, noverlap: usize) -> StftResult {
-    let kernel = match StftKernel::try_new(StftConfig {
+pub fn stft(
+    x: &[f64],
+    fs: f64,
+    nperseg: usize,
+    noverlap: usize,
+) -> Result<StftResult, ExecInvariantViolation> {
+    let kernel = StftKernel::try_new(StftConfig {
         fs,
         nperseg,
         noverlap,
-    }) {
-        Ok(kernel) => kernel,
-        Err(_) => return StftResult::default(),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+    })
+    .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 /// Inverse STFT using overlap-add with Hann synthesis.
@@ -1311,16 +1319,14 @@ pub fn istft(
     fs: f64,
     nperseg: usize,
     noverlap: usize,
-) -> (Vec<f64>, Vec<f64>) {
-    let kernel = match IstftKernel::try_new(IstftConfig {
+) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation> {
+    let kernel = IstftKernel::try_new(IstftConfig {
         fs,
         nperseg,
         noverlap,
-    }) {
-        Ok(kernel) => kernel,
-        Err(_) => return (Vec::new(), Vec::new()),
-    };
-    kernel.run_alloc(zxx).unwrap_or_default()
+    })
+    .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(zxx)
 }
 
 /// Spectrogram from STFT magnitude squared.
@@ -1329,35 +1335,36 @@ pub fn spectrogram(
     fs: f64,
     nperseg: usize,
     noverlap: usize,
-) -> (Vec<f64>, Vec<f64>, Vec<Vec<f64>>) {
-    let kernel = match SpectrogramKernel::try_new(SpectrogramConfig {
+) -> Result<SpectrogramTuple, ExecInvariantViolation> {
+    let kernel = SpectrogramKernel::try_new(SpectrogramConfig {
         fs,
         nperseg,
         noverlap,
-    }) {
-        Ok(kernel) => kernel,
-        Err(_) => return (Vec::new(), Vec::new(), Vec::new()),
-    };
-    let result = kernel.run_alloc(x).unwrap_or_default();
-    (result.frequencies, result.times, result.sxx)
+    })
+    .map_err(ExecInvariantViolation::from)?;
+    let result = kernel.run_alloc(x)?;
+    Ok((result.frequencies, result.times, result.sxx))
 }
 
 /// Frequency response of digital filter coefficients.
-pub fn freqz(b: &[f64], a: &[f64], wor_n: usize) -> (Vec<f64>, Vec<Complex<f64>>) {
-    let kernel = match FreqzKernel::try_new(FreqzConfig { wor_n }) {
-        Ok(kernel) => kernel,
-        Err(_) => return (Vec::new(), Vec::new()),
-    };
-    kernel.run_alloc(b, a).unwrap_or_default()
+pub fn freqz(
+    b: &[f64],
+    a: &[f64],
+    wor_n: usize,
+) -> Result<(Vec<f64>, Vec<Complex<f64>>), ExecInvariantViolation> {
+    let kernel =
+        FreqzKernel::try_new(FreqzConfig { wor_n }).map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(b, a)
 }
 
 /// Frequency response of SOS cascades.
-pub fn sosfreqz(sos: &[Sos<f64>], wor_n: usize) -> (Vec<f64>, Vec<Complex<f64>>) {
-    let kernel = match SosFreqzKernel::try_new(SosFreqzConfig { wor_n }) {
-        Ok(kernel) => kernel,
-        Err(_) => return (Vec::new(), Vec::new()),
-    };
-    kernel.run_alloc(sos).unwrap_or_default()
+pub fn sosfreqz(
+    sos: &[Sos<f64>],
+    wor_n: usize,
+) -> Result<(Vec<f64>, Vec<Complex<f64>>), ExecInvariantViolation> {
+    let kernel =
+        SosFreqzKernel::try_new(SosFreqzConfig { wor_n }).map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(sos)
 }
 
 #[cfg(test)]
@@ -1379,7 +1386,7 @@ mod tests {
     #[test]
     fn periodogram_returns_nonnegative_density() {
         let x = test_signal();
-        let (f, pxx) = periodogram(&x, 100.0);
+        let (f, pxx) = periodogram(&x, 100.0).expect("periodogram should succeed");
         assert!(!f.is_empty());
         assert_eq!(f.len(), pxx.len());
         assert!(pxx.iter().all(|v| *v >= 0.0));
@@ -1404,7 +1411,7 @@ mod tests {
     #[test]
     fn welch_detects_main_frequency_bin() {
         let x = test_signal();
-        let (f, pxx) = welch(&x, 100.0, 128);
+        let (f, pxx) = welch(&x, 100.0, 128).expect("welch should succeed");
         let (idx, _) = pxx
             .iter()
             .enumerate()
@@ -1425,8 +1432,8 @@ mod tests {
     #[test]
     fn csd_and_coherence_shapes_match() {
         let x = test_signal();
-        let (fxy, pxy) = csd(&x, &x, 100.0, 128);
-        let (fc, coh) = coherence(&x, &x, 100.0, 128);
+        let (fxy, pxy) = csd(&x, &x, 100.0, 128).expect("csd should succeed");
+        let (fc, coh) = coherence(&x, &x, 100.0, 128).expect("coherence should succeed");
         assert_eq!(fxy.len(), pxy.len());
         assert_eq!(fc.len(), coh.len());
         assert_eq!(fxy.len(), fc.len());
@@ -1472,9 +1479,9 @@ mod tests {
     #[test]
     fn stft_istft_round_trip_is_stable() {
         let x = test_signal();
-        let st = stft(&x, 100.0, 128, 64);
+        let st = stft(&x, 100.0, 128, 64).expect("stft should succeed");
         assert!(!st.zxx.is_empty());
-        let (_t, y) = istft(&st.zxx, 100.0, 128, 64);
+        let (_t, y) = istft(&st.zxx, 100.0, 128, 64).expect("istft should succeed");
         assert!(!y.is_empty());
         let n = x.len().min(y.len());
         let mse = x
@@ -1509,7 +1516,7 @@ mod tests {
         })
         .expect("valid config");
         let x = test_signal();
-        let st = stft(&x, 100.0, 128, 64);
+        let st = stft(&x, 100.0, 128, 64).expect("stft should succeed");
         let mut t = vec![0.0; 10];
         let mut y = vec![0.0; 10];
         let err = kernel
@@ -1521,7 +1528,7 @@ mod tests {
     #[test]
     fn spectrogram_matches_stft_shape() {
         let x = test_signal();
-        let (f, t, sxx) = spectrogram(&x, 100.0, 128, 64);
+        let (f, t, sxx) = spectrogram(&x, 100.0, 128, 64).expect("spectrogram should succeed");
         assert!(!sxx.is_empty());
         assert_eq!(sxx.len(), f.len());
         assert_eq!(sxx[0].len(), t.len());
@@ -1541,7 +1548,7 @@ mod tests {
     fn freqz_dc_gain_matches_simple_moving_average() {
         let b = [0.5f64, 0.5];
         let a = [1.0f64];
-        let (_w, h) = freqz(&b, &a, 32);
+        let (_w, h) = freqz(&b, &a, 32).expect("freqz should succeed");
         assert_abs_diff_eq!(h[0].re, 1.0, epsilon = 1e-12);
         assert_abs_diff_eq!(h[0].im, 0.0, epsilon = 1e-12);
     }
@@ -1564,8 +1571,8 @@ mod tests {
     #[test]
     fn sosfreqz_matches_single_section_freqz() {
         let sec = Sos::new([0.5f64, 0.5, 0.0], [1.0, 0.0, 0.0]);
-        let (_w1, h1) = freqz(&sec.b, &sec.a, 16);
-        let (_w2, h2) = sosfreqz(&[sec], 16);
+        let (_w1, h1) = freqz(&sec.b, &sec.a, 16).expect("freqz should succeed");
+        let (_w2, h2) = sosfreqz(&[sec], 16).expect("sosfreqz should succeed");
         for (a, b) in h1.iter().zip(h2.iter()) {
             assert_abs_diff_eq!(a.re, b.re, epsilon = 1e-12);
             assert_abs_diff_eq!(a.im, b.im, epsilon = 1e-12);

@@ -297,14 +297,14 @@ pub fn fftconvolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) 
 /// # Returns
 /// A Vec containing the convolution of `in1` with `in2`.
 /// With Full mode, the output length will be `in1.len() + in2.len() - 1`.
-pub fn convolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> Vec<F> {
-    if in1.is_empty() || in2.is_empty() {
-        return Vec::new();
-    }
-
-    ConvolveKernel { mode }
-        .run_alloc(in1, in2)
-        .unwrap_or_default()
+pub fn convolve<F: Float + FftNum>(
+    in1: &[F],
+    in2: &[F],
+    mode: ConvolveMode,
+) -> Result<Vec<F>, ExecInvariantViolation> {
+    let kernel =
+        ConvolveKernel::try_new(ConvolveConfig { mode }).map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(in1, in2)
 }
 
 /// Compute the cross-correlation of two signals using FFT.
@@ -319,14 +319,14 @@ pub fn convolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> 
 /// # Returns
 /// A Vec containing the cross-correlation of `in1` with `in2`.
 /// With Full mode, the output length will be `in1.len() + in2.len() - 1`.
-pub fn correlate<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> Vec<F> {
-    if in1.is_empty() || in2.is_empty() {
-        return Vec::new();
-    }
-
-    CorrelateKernel { mode }
-        .run_alloc(in1, in2)
-        .unwrap_or_default()
+pub fn correlate<F: Float + FftNum>(
+    in1: &[F],
+    in2: &[F],
+    mode: ConvolveMode,
+) -> Result<Vec<F>, ExecInvariantViolation> {
+    let kernel =
+        CorrelateKernel::try_new(CorrelateConfig { mode }).map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(in1, in2)
 }
 
 #[cfg(test)]
@@ -341,7 +341,7 @@ mod tests {
     fn test_convolve() {
         let in1 = vec![1.0, 2.0, 3.0];
         let in2 = vec![4.0, 5.0, 6.0];
-        let result = convolve(&in1, &in2, ConvolveMode::Full);
+        let result = convolve(&in1, &in2, ConvolveMode::Full).expect("convolve should succeed");
         let expected = vec![4.0, 13.0, 28.0, 27.0, 18.0];
 
         for (a, b) in result.iter().zip(expected.iter()) {
@@ -353,7 +353,7 @@ mod tests {
     fn test_correlate() {
         let in1 = vec![1.0, 2.0, 3.0];
         let in2 = vec![4.0, 5.0, 6.0];
-        let result = correlate(&in1, &in2, ConvolveMode::Full);
+        let result = correlate(&in1, &in2, ConvolveMode::Full).expect("correlate should succeed");
         let expected = vec![6.0, 17.0, 32.0, 23.0, 12.0];
         for (a, b) in result.iter().zip(expected.iter()) {
             assert_relative_eq!(a, b, epsilon = 1e-10);
@@ -364,7 +364,8 @@ mod tests {
     fn test_convolve_valid() {
         let in1 = vec![1.0, 2.0, 3.0, 4.0];
         let in2 = vec![1.0, 2.0];
-        let result = convolve(&in1, &in2, ConvolveMode::Valid);
+        let result =
+            convolve(&in1, &in2, ConvolveMode::Valid).expect("convolve valid should succeed");
         let expected = vec![4.0, 7.0, 10.0];
         for (a, b) in result.iter().zip(expected.iter()) {
             assert_relative_eq!(a, b, epsilon = 1e-10);
@@ -375,7 +376,8 @@ mod tests {
     fn test_convolve_same() {
         let in1 = vec![1.0, 2.0, 3.0, 4.0];
         let in2 = vec![1.0, 2.0, 1.0];
-        let result = convolve(&in1, &in2, ConvolveMode::Same);
+        let result =
+            convolve(&in1, &in2, ConvolveMode::Same).expect("convolve same should succeed");
         let expected = vec![4.0, 8.0, 12.0, 11.0];
         for (a, b) in result.iter().zip(expected.iter()) {
             assert_relative_eq!(a, b, epsilon = 1e-10);
@@ -433,7 +435,7 @@ mod tests {
         let sig: Vec<f64> = StandardUniform.sample_iter(&mut rng).take(1000).collect();
 
         // Compute autocorrelation using correlate directly
-        let autocorr = correlate(&sig, &sig, ConvolveMode::Full);
+        let autocorr = correlate(&sig, &sig, ConvolveMode::Full).expect("autocorr should succeed");
 
         // Basic sanity checks
         assert_eq!(autocorr.len(), 1999); // Full convolution length should be 2N-1

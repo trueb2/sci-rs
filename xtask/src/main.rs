@@ -316,7 +316,8 @@ fn run_contracts() -> Result<()> {
         let candidate = kernel
             .run_alloc(in1.as_slice(), in2.as_slice())
             .map_err(|e| anyhow!("convolve candidate execution failed: {e}"))?;
-        let baseline = convolve_baseline(&in1, &in2, ConvolveMode::Full);
+        let baseline = convolve_baseline(&in1, &in2, ConvolveMode::Full)
+            .map_err(|e| anyhow!("convolve baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "convolve",
@@ -331,8 +332,9 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("convolve candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(120, || {
-            let _ = convolve_baseline(&in1, &in2, ConvolveMode::Full);
-            Ok(())
+            convolve_baseline(&in1, &in2, ConvolveMode::Full)
+                .map(|_| ())
+                .map_err(|e| anyhow!("convolve baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -360,7 +362,8 @@ fn run_contracts() -> Result<()> {
         let candidate = kernel
             .run_alloc(in1.as_slice(), in2.as_slice())
             .map_err(|e| anyhow!("correlate candidate execution failed: {e}"))?;
-        let baseline = correlate_baseline(&in1, &in2, ConvolveMode::Full);
+        let baseline = correlate_baseline(&in1, &in2, ConvolveMode::Full)
+            .map_err(|e| anyhow!("correlate baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "correlate",
@@ -375,8 +378,9 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("correlate candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(120, || {
-            let _ = correlate_baseline(&in1, &in2, ConvolveMode::Full);
-            Ok(())
+            correlate_baseline(&in1, &in2, ConvolveMode::Full)
+                .map(|_| ())
+                .map_err(|e| anyhow!("correlate baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -402,7 +406,8 @@ fn run_contracts() -> Result<()> {
         let candidate = kernel
             .run_alloc(input.as_slice())
             .map_err(|e| anyhow!("resample candidate execution failed: {e}"))?;
-        let baseline = resample_baseline(&input, target_len);
+        let baseline = resample_baseline(&input, target_len)
+            .map_err(|e| anyhow!("resample baseline execution failed: {e}"))?;
         let py = python_signal_eval(
             &python_bin,
             "resample",
@@ -417,8 +422,9 @@ fn run_contracts() -> Result<()> {
                 .map_err(|e| anyhow!("resample candidate benchmark failed: {e}"))
         })?;
         let baseline_ns = benchmark_avg_ns(80, || {
-            let _ = resample_baseline(&input, target_len);
-            Ok(())
+            resample_baseline(&input, target_len)
+                .map(|_| ())
+                .map_err(|e| anyhow!("resample baseline benchmark failed: {e}"))
         })?;
 
         record_case(

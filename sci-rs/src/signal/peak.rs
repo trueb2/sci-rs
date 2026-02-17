@@ -757,106 +757,106 @@ where
 }
 
 /// Return indices of relative extrema according to `comparator`.
-pub fn argrelextrema<F, C>(x: &[F], comparator: C, order: usize) -> Vec<usize>
+pub fn argrelextrema<F>(
+    x: &[F],
+    comparator: fn(F, F) -> bool,
+    order: usize,
+) -> Result<Vec<usize>, ExecInvariantViolation>
 where
     F: PartialOrd + Copy,
-    C: Fn(F, F) -> bool,
 {
-    argrelextrema_impl(x, comparator, order)
+    let kernel = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig { order, comparator })
+        .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 /// Return indices of relative maxima.
-pub fn argrelmax<F>(x: &[F], order: usize) -> Vec<usize>
+pub fn argrelmax<F>(x: &[F], order: usize) -> Result<Vec<usize>, ExecInvariantViolation>
 where
     F: PartialOrd + Copy,
 {
-    let kernel = match ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+    let kernel = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
         order,
         comparator: |a, b| a > b,
-    }) {
-        Ok(kernel) => kernel,
-        Err(_) => return Vec::new(),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+    })
+    .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 /// Return indices of relative minima.
-pub fn argrelmin<F>(x: &[F], order: usize) -> Vec<usize>
+pub fn argrelmin<F>(x: &[F], order: usize) -> Result<Vec<usize>, ExecInvariantViolation>
 where
     F: PartialOrd + Copy,
 {
-    let kernel = match ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+    let kernel = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
         order,
         comparator: |a, b| a < b,
-    }) {
-        Ok(kernel) => kernel,
-        Err(_) => return Vec::new(),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+    })
+    .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 /// Find local peaks with optional height and distance filtering.
-pub fn find_peaks<F>(x: &[F], options: FindPeaksOptions<F>) -> Vec<usize>
+pub fn find_peaks<F>(
+    x: &[F],
+    options: FindPeaksOptions<F>,
+) -> Result<Vec<usize>, ExecInvariantViolation>
 where
     F: PartialOrd + Copy,
 {
-    let kernel = match FindPeaksKernel::try_new(options.into()) {
-        Ok(kernel) => kernel,
-        Err(_) => return Vec::new(),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+    let kernel = FindPeaksKernel::try_new(options.into()).map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 /// Compute peak prominences and base indices.
-pub fn peak_prominences<F>(x: &[F], peaks: &[usize]) -> PeakProminencesResult<F>
+pub fn peak_prominences<F>(
+    x: &[F],
+    peaks: &[usize],
+) -> Result<PeakProminencesResult<F>, ExecInvariantViolation>
 where
     F: Float + Copy,
 {
-    let kernel = match PeakProminencesKernel::try_new(PeakProminencesConfig) {
-        Ok(kernel) => kernel,
-        Err(_) => return PeakProminencesResult::default(),
-    };
-    kernel.run_alloc(x, peaks).unwrap_or_default()
+    let kernel = PeakProminencesKernel::try_new(PeakProminencesConfig)
+        .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x, peaks)
 }
 
 /// Compute peak widths at relative height.
-pub fn peak_widths<F>(x: &[F], peaks: &[usize], rel_height: F) -> PeakWidthsResult<F>
+pub fn peak_widths<F>(
+    x: &[F],
+    peaks: &[usize],
+    rel_height: F,
+) -> Result<PeakWidthsResult<F>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
-    let kernel = match PeakWidthsKernel::try_new(PeakWidthsConfig { rel_height }) {
-        Ok(kernel) => kernel,
-        Err(_) => return PeakWidthsResult::default(),
-    };
-    kernel.run_alloc(x, peaks).unwrap_or_default()
+    let kernel = PeakWidthsKernel::try_new(PeakWidthsConfig { rel_height })
+        .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x, peaks)
 }
 
 /// Continuous wavelet transform using a Ricker wavelet family.
-pub fn cwt<F>(x: &[F], widths: &[usize]) -> Vec<Vec<F>>
+pub fn cwt<F>(x: &[F], widths: &[usize]) -> Result<Vec<Vec<F>>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
-    let kernel = match CwtKernel::try_new(CwtConfig {
+    let kernel = CwtKernel::try_new(CwtConfig {
         widths: widths.to_vec(),
-    }) {
-        Ok(kernel) => kernel,
-        Err(_) => return Vec::new(),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+    })
+    .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 /// Find peaks from a wavelet-enhanced score map.
-pub fn find_peaks_cwt<F>(x: &[F], widths: &[usize]) -> Vec<usize>
+pub fn find_peaks_cwt<F>(x: &[F], widths: &[usize]) -> Result<Vec<usize>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
-    let kernel = match FindPeaksCwtKernel::try_new(FindPeaksCwtConfig {
+    let kernel = FindPeaksCwtKernel::try_new(FindPeaksCwtConfig {
         widths: widths.to_vec(),
-    }) {
-        Ok(kernel) => kernel,
-        Err(_) => return Vec::new(),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+    })
+    .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 #[cfg(test)]
@@ -867,9 +867,15 @@ mod tests {
     #[test]
     fn argrel_variants_find_expected_indices() {
         let x = [0.0f64, 1.0, 0.0, -1.0, 0.0, 2.0, 1.0];
-        assert_eq!(argrelmax(&x, 1), vec![1, 5]);
-        assert_eq!(argrelmin(&x, 1), vec![3]);
-        assert_eq!(argrelextrema(&x, |a, b| a > b, 1), vec![1, 5]);
+        assert_eq!(
+            argrelmax(&x, 1).expect("argrelmax should succeed"),
+            vec![1, 5]
+        );
+        assert_eq!(argrelmin(&x, 1).expect("argrelmin should succeed"), vec![3]);
+        assert_eq!(
+            argrelextrema(&x, |a, b| a > b, 1).expect("argrelextrema should succeed"),
+            vec![1, 5]
+        );
     }
 
     #[test]
@@ -902,7 +908,8 @@ mod tests {
                 height: Some(0.5),
                 distance: Some(3),
             },
-        );
+        )
+        .expect("find_peaks should succeed");
         assert_eq!(peaks, vec![1, 5]);
     }
 
@@ -919,14 +926,14 @@ mod tests {
     fn prominences_and_widths_return_valid_shapes() {
         let x = [0.0f64, 1.0, 0.2, 0.8, 0.1, 2.0, 0.0];
         let peaks = vec![1, 5];
-        let prom = peak_prominences(&x, &peaks);
+        let prom = peak_prominences(&x, &peaks).expect("peak_prominences should succeed");
         assert_eq!(prom.prominences.len(), 2);
         assert_eq!(prom.left_bases.len(), 2);
         assert_eq!(prom.right_bases.len(), 2);
         assert!(prom.prominences[0] > 0.0);
         assert!(prom.prominences[1] > 0.0);
 
-        let widths = peak_widths(&x, &peaks, 0.5);
+        let widths = peak_widths(&x, &peaks, 0.5).expect("peak_widths should succeed");
         assert_eq!(widths.widths.len(), 2);
         assert_eq!(widths.width_heights.len(), 2);
         assert!(widths.widths[0] >= 0.0);
@@ -949,7 +956,7 @@ mod tests {
     fn cwt_shape_matches_widths_and_input_len() {
         let x = [0.0f64, 1.0, 0.0, -1.0, 0.0];
         let widths = [1usize, 2, 3];
-        let m = cwt(&x, &widths);
+        let m = cwt(&x, &widths).expect("cwt should succeed");
         assert_eq!(m.len(), widths.len());
         for row in &m {
             assert_eq!(row.len(), x.len());
@@ -968,7 +975,7 @@ mod tests {
     #[test]
     fn find_peaks_cwt_detects_main_peak() {
         let x = [0.0f64, 0.3, 1.2, 0.2, 0.1, 0.0];
-        let peaks = find_peaks_cwt(&x, &[1, 2, 3]);
+        let peaks = find_peaks_cwt(&x, &[1, 2, 3]).expect("find_peaks_cwt should succeed");
         assert!(peaks.contains(&2));
     }
 
@@ -984,7 +991,7 @@ mod tests {
     #[test]
     fn peak_width_matches_simple_triangle() {
         let x = [0.0f64, 1.0, 0.0];
-        let widths = peak_widths(&x, &[1], 0.5);
+        let widths = peak_widths(&x, &[1], 0.5).expect("peak_widths should succeed");
         assert_eq!(widths.widths.len(), 1);
         assert_abs_diff_eq!(widths.widths[0], 1.0, epsilon = 1e-12);
     }

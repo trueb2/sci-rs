@@ -403,46 +403,45 @@ where
 }
 
 /// Upsample by `up`, apply FIR `h`, and downsample by `down`.
-pub fn upfirdn<F>(h: &[F], x: &[F], up: usize, down: usize) -> Vec<F>
+pub fn upfirdn<F>(
+    h: &[F],
+    x: &[F],
+    up: usize,
+    down: usize,
+) -> Result<Vec<F>, ExecInvariantViolation>
 where
     F: Float + Copy,
 {
-    let kernel = match UpFirDnKernel::try_new(UpFirDnConfig {
+    let kernel = UpFirDnKernel::try_new(UpFirDnConfig {
         h: h.to_vec(),
         up,
         down,
-    }) {
-        Ok(kernel) => kernel,
-        Err(_) => return Vec::new(),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+    })
+    .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 /// Polyphase-like resampling using linear interpolation.
 ///
 /// This implementation targets deterministic embedded-friendly behavior and
 /// supports the common `up/down` ratio contract from SciPy's `resample_poly`.
-pub fn resample_poly<F>(x: &[F], up: usize, down: usize) -> Vec<F>
+pub fn resample_poly<F>(x: &[F], up: usize, down: usize) -> Result<Vec<F>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
-    let kernel = match ResamplePolyKernel::try_new(ResamplePolyConfig { up, down }) {
-        Ok(kernel) => kernel,
-        Err(_) => return Vec::new(),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+    let kernel = ResamplePolyKernel::try_new(ResamplePolyConfig { up, down })
+        .map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 /// Decimate by integer factor `q`.
-pub fn decimate<F>(x: &[F], q: usize) -> Vec<F>
+pub fn decimate<F>(x: &[F], q: usize) -> Result<Vec<F>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
-    let kernel = match DecimateKernel::try_new(DecimateConfig { q }) {
-        Ok(kernel) => kernel,
-        Err(_) => return Vec::new(),
-    };
-    kernel.run_alloc(x).unwrap_or_default()
+    let kernel =
+        DecimateKernel::try_new(DecimateConfig { q }).map_err(ExecInvariantViolation::from)?;
+    kernel.run_alloc(x)
 }
 
 #[cfg(test)]
@@ -455,7 +454,7 @@ mod tests {
     fn upfirdn_matches_simple_reference() {
         let x = [1.0f64, 2.0, 3.0];
         let h = [1.0f64, 1.0];
-        let y = upfirdn(&h, &x, 2, 1);
+        let y = upfirdn(&h, &x, 2, 1).expect("upfirdn should succeed");
         let expected = vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 0.0];
         assert_eq!(y, expected);
     }
@@ -498,7 +497,7 @@ mod tests {
     #[test]
     fn resample_poly_interpolates_to_expected_length() {
         let x = [1.0f64, 2.0, 3.0];
-        let y = resample_poly(&x, 2, 1);
+        let y = resample_poly(&x, 2, 1).expect("resample_poly should succeed");
         let expected = [1.0, 1.5, 2.0, 2.5, 3.0, 3.0];
         assert_eq!(y.len(), expected.len());
         for (a, b) in y.iter().zip(expected.iter()) {
@@ -524,7 +523,7 @@ mod tests {
     #[test]
     fn decimate_reduces_length() {
         let x = [0.0f64, 1.0, 2.0, 3.0, 4.0];
-        let y = decimate(&x, 2);
+        let y = decimate(&x, 2).expect("decimate should succeed");
         assert_eq!(y, vec![0.0, 2.0, 4.0]);
     }
 
