@@ -19,6 +19,9 @@ Legend:
 | signal | `Correlate1D<T>` | yes | yes | yes | `CorrelateKernel` |
 | signal | `Resample1D<T>` | yes | yes | yes | `ResampleKernel` |
 | signal | `SquareWave1D<T>` | yes | yes | yes | `SquareWaveKernel` |
+| signal | `SawtoothWave1D<T>` | yes | yes | yes | `SawtoothWaveKernel` |
+| signal | `ChirpWave1D<T>` | yes | yes | yes | `ChirpKernel` |
+| signal | `UnitImpulse1D<T>` | yes | yes | yes | `UnitImpulseKernel` |
 | signal | `SavgolFilter1D<T>` | yes | yes | yes | `SavgolFilterKernel` |
 | signal | `SosFilt1D<T>` | yes | yes | yes | `SosFiltKernel` |
 | signal | `SosFiltFilt1D<T>` | yes | yes | yes | kernel parity and invariant tests |
@@ -52,6 +55,9 @@ Legend:
 | `convolve` | `ConvolveKernel` + `Convolve1D` | yes | yes |
 | `correlate` | `CorrelateKernel` + `Correlate1D` | yes | yes |
 | `resample` | `ResampleKernel` + `Resample1D` | yes | yes |
+| `sawtooth` | `SawtoothWaveKernel` + `SawtoothWave1D` | yes | yes |
+| `chirp` | `ChirpKernel` + `ChirpWave1D` | yes | yes |
+| `unit_impulse` | `UnitImpulseKernel` + `UnitImpulse1D` | yes | yes |
 | `lfilter` | `LFilterKernel` + `LFilter1D` | yes | yes |
 | `filtfilt` | `FiltFiltKernel` + `FiltFilt1D` | yes | yes |
 | `sosfilt` | `SosFiltKernel` + `SosFilt1D` | yes | yes |
@@ -70,7 +76,7 @@ This sweep is complete for the refactor scope; remaining legacy entrypoints are 
 | `signal/filter` | `lfilter_zi_dyn` / `sosfilt_zi_dyn` | complete | checked wrappers and design kernels wired |
 | `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | complete | checked helper APIs and axis kernels landed |
 | `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | complete | covered by `IirFilterKernel` plus dedicated zpk helper kernels; checked `iirfilter/butter` entrypoints now available |
-| `signal/wave` | `square` (ndarray N-D) | complete | N-D path now uses trait-first square kernel (alloc) |
+| `signal/wave` | `square`/`sawtooth`/`chirp` (ndarray N-D) + `unit_impulse` (1D) | complete | waveform APIs now route through trait-first kernels |
 | `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | complete | trait-first stats kernels exist and are parity-tested; free functions are compatibility shims |
 | `linalg` | `companion_dyn` | complete | checked kernel-backed construction path added |
 
@@ -86,7 +92,8 @@ This sweep is complete for the refactor scope; remaining legacy entrypoints are 
 
 ## Next Interfaces In Flight
 
-1. None. Checklist scope complete.
+1. `gausspulse`
+2. `sweep_poly`
 
 ## Source Recheck Audit (2026-02-17)
 

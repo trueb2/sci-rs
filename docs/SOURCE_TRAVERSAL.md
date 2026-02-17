@@ -38,8 +38,8 @@ Status legend:
 | `sci-rs/src/signal/traits.rs` | refactored | signal trait-first contract surface |
 | `sci-rs/src/signal/convolve.rs` | refactored | kernel-first + legacy shim routing |
 | `sci-rs/src/signal/resample.rs` | refactored | kernel-first + legacy shim routing |
-| `sci-rs/src/signal/wave/mod.rs` | refactored | N-D `square` now routes through square kernel (alloc path) |
-| `sci-rs/src/signal/wave/kernels.rs` | refactored | `SquareWaveKernel` |
+| `sci-rs/src/signal/wave/mod.rs` | refactored | `square`/`sawtooth`/`chirp` route through waveform kernels; 1D `unit_impulse` shim added |
+| `sci-rs/src/signal/wave/kernels.rs` | refactored | waveform kernels: `SquareWaveKernel`, `SawtoothWaveKernel`, `ChirpKernel`, `UnitImpulseKernel` |
 
 ## sci-rs/src/signal/windows
 

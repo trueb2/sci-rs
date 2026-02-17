@@ -23,11 +23,16 @@ use sci_rs::signal::filter::{
 };
 use sci_rs::signal::resample::{resample as resample_baseline, ResampleConfig, ResampleKernel};
 use sci_rs::signal::traits::{
-    Convolve1D, Correlate1D, FiltFilt1D, FirWinDesign, IirDesign, LFilter1D, LFilterZiDesign1D,
-    Resample1D, SavgolCoeffsDesign, SavgolFilter1D, SosFilt1D, SosFiltFilt1D, SosFiltZiDesign1D,
-    SquareWave1D, WindowGenerate,
+    ChirpWave1D, Convolve1D, Correlate1D, FiltFilt1D, FirWinDesign, IirDesign, LFilter1D,
+    LFilterZiDesign1D, Resample1D, SavgolCoeffsDesign, SavgolFilter1D, SawtoothWave1D, SosFilt1D,
+    SosFiltFilt1D, SosFiltZiDesign1D, SquareWave1D, UnitImpulse1D, WindowGenerate,
 };
-use sci_rs::signal::wave::{square as square_baseline, SquareWaveConfig, SquareWaveKernel};
+use sci_rs::signal::wave::{
+    chirp as chirp_baseline, sawtooth as sawtooth_baseline, square as square_baseline,
+    unit_impulse as unit_impulse_baseline, ChirpConfig, ChirpKernel, ChirpMethod,
+    SawtoothWaveConfig, SawtoothWaveKernel, SquareWaveConfig, SquareWaveKernel, UnitImpulseConfig,
+    UnitImpulseKernel,
+};
 use sci_rs::signal::windows::{
     get_window as get_window_baseline, GetWindow, GetWindowBuilder, WindowBuilderOwned,
     WindowConfig, WindowKernel,
@@ -78,6 +83,21 @@ def _compute():
         return scipy.signal.resample(_as_array("input"), int(p["target_len"]))
     if op == "square":
         return scipy.signal.square(_as_array("t"), duty=float(p["duty"]))
+    if op == "sawtooth":
+        return scipy.signal.sawtooth(_as_array("t"), width=float(p["width"]))
+    if op == "chirp":
+        return scipy.signal.chirp(
+            _as_array("t"),
+            f0=float(p["f0"]),
+            t1=float(p["t1"]),
+            f1=float(p["f1"]),
+            method=p["method"],
+            phi=float(p["phi_deg"]),
+            vertex_zero=bool(p["vertex_zero"]),
+        )
+    if op == "unit_impulse":
+        idx = p.get("idx")
+        return scipy.signal.unit_impulse(int(p["len"]), idx if idx is None else int(idx))
     if op == "lfilter":
         return scipy.signal.lfilter(_as_array("b"), _as_array("a"), _as_array("x"))
     if op == "filtfilt":
@@ -420,6 +440,170 @@ fn run_contracts() -> Result<()> {
         })?;
         let baseline_ns = benchmark_avg_ns(200, || {
             let _ = square_baseline(&Array1::from_vec(t.clone()), duty);
+            Ok(())
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // Sawtooth wave
+    {
+        let case_id = "sawtooth_wave_f64";
+        let width = 0.37f64;
+        let t: Vec<f64> = (0..512).map(|i| (i as f64 - 128.0) / 16.0).collect();
+
+        let kernel = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width })?;
+        let candidate = kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("sawtooth candidate execution failed: {e}"))?;
+        let baseline = sawtooth_baseline(&Array1::from_vec(t.clone()), width).to_vec();
+        let py = python_signal_eval(
+            &python_bin,
+            "sawtooth",
+            json!({ "t": t, "width": width }),
+            250,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(200, || {
+            kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("sawtooth candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(200, || {
+            let _ = sawtooth_baseline(&Array1::from_vec(t.clone()), width);
+            Ok(())
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // Chirp wave (linear)
+    {
+        let case_id = "chirp_linear_f64";
+        let f0 = 2.0f64;
+        let t1 = 4.0f64;
+        let f1 = 12.0f64;
+        let phi_deg = 15.0f64;
+        let vertex_zero = true;
+        let method = ChirpMethod::Linear;
+        let py_method = "linear";
+        let t: Vec<f64> = (0..512).map(|i| i as f64 / 128.0).collect();
+
+        let kernel = ChirpKernel::try_new(ChirpConfig {
+            f0,
+            t1,
+            f1,
+            method,
+            phi_deg,
+            vertex_zero,
+        })?;
+        let candidate = kernel
+            .run_alloc(&t)
+            .map_err(|e| anyhow!("chirp candidate execution failed: {e}"))?;
+        let baseline = chirp_baseline(
+            &Array1::from_vec(t.clone()),
+            f0,
+            t1,
+            f1,
+            method,
+            phi_deg,
+            vertex_zero,
+        )
+        .to_vec();
+        let py = python_signal_eval(
+            &python_bin,
+            "chirp",
+            json!({
+                "t": t,
+                "f0": f0,
+                "t1": t1,
+                "f1": f1,
+                "method": py_method,
+                "phi_deg": phi_deg,
+                "vertex_zero": vertex_zero,
+            }),
+            180,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(140, || {
+            kernel
+                .run_alloc(&t)
+                .map(|_| ())
+                .map_err(|e| anyhow!("chirp candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(140, || {
+            let _ = chirp_baseline(
+                &Array1::from_vec(t.clone()),
+                f0,
+                t1,
+                f1,
+                method,
+                phi_deg,
+                vertex_zero,
+            );
+            Ok(())
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // Unit impulse
+    {
+        let case_id = "unit_impulse_1d_f64";
+        let len = 1024usize;
+        let idx = 257usize;
+
+        let kernel = UnitImpulseKernel::try_new(UnitImpulseConfig { len, idx })?;
+        let candidate: Vec<f64> = kernel
+            .run_alloc()
+            .map_err(|e| anyhow!("unit_impulse candidate execution failed: {e}"))?;
+        let baseline = unit_impulse_baseline::<f64>(len, Some(idx)).to_vec();
+        let py = python_signal_eval(
+            &python_bin,
+            "unit_impulse",
+            json!({ "len": len, "idx": idx }),
+            500,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(300, || {
+            let _: Vec<f64> = kernel
+                .run_alloc()
+                .map_err(|e| anyhow!("unit_impulse candidate benchmark failed: {e}"))?;
+            Ok(())
+        })?;
+        let baseline_ns = benchmark_avg_ns(300, || {
+            let _ = unit_impulse_baseline::<f64>(len, Some(idx));
             Ok(())
         })?;
 

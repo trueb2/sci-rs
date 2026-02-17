@@ -18,7 +18,7 @@ Generated from local SciPy `1.14.1` by `scripts/generate_scipy_checklist_invento
 - required-now count: `160`
 - deferred-pythonism count: `2`
 - merged count: `0`
-- active count: `0`
+- active count: `4`
 
 ## Status Legend
 
@@ -91,7 +91,7 @@ Generated from local SciPy `1.14.1` by `scripts/generate_scipy_checklist_invento
 | cheby2 | scipy.signal | function | required_now | filter_design | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.cheby2.html | _filter_design.py:L3352 |  |  |  |  |  |  |  |
 | check_COLA | scipy.signal | function | required_now | spectral | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.check_COLA.html | _spectral_py.py:L809 |  |  |  |  |  |  |  |
 | check_NOLA | scipy.signal | function | required_now | spectral | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.check_NOLA.html | _spectral_py.py:L931 |  |  |  |  |  |  |  |
-| chirp | scipy.signal | function | required_now | waveforms | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.chirp.html | _waveforms.py:L264 |  |  |  |  |  |  |  |
+| chirp | scipy.signal | function | required_now | waveforms | impl | codex | codex/refactor-scipy-waveforms-batch1 | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.chirp.html | _waveforms.py:L264 | ChirpWave1D<T>/ChirpConfig<T>/ChirpKernel<T> | sci-rs/src/signal/wave/mod.rs;sci-rs/src/signal/wave/kernels.rs |  |  |  |  | implemented methods: linear/quadratic/logarithmic/hyperbolic |
 | choose_conv_method | scipy.signal | function | required_now | convolution | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.choose_conv_method.html | _signaltools.py:L1165 |  |  |  |  |  |  |  |
 | cmplx_sort | scipy.signal | function | required_now | filtering | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.cmplx_sort.html | _signaltools.py:L2462 |  |  |  |  |  |  |  |
 | coherence | scipy.signal | function | required_now | spectral | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.coherence.html | _spectral_py.py:L1551 |  |  |  |  |  |  |  |
@@ -192,7 +192,7 @@ Generated from local SciPy `1.14.1` by `scripts/generate_scipy_checklist_invento
 | ricker | scipy.signal | function | required_now | wavelets | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.ricker.html | _wavelets.py:L316 |  |  |  |  |  |  |  |
 | savgol_coeffs | scipy.signal | function | required_now | filtering | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_coeffs.html | _savitzky_golay.py:L8 |  |  |  |  |  |  |  |
 | savgol_filter | scipy.signal | function | required_now | filtering | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html | _savitzky_golay.py:L230 |  |  |  |  |  |  |  |
-| sawtooth | scipy.signal | function | required_now | waveforms | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sawtooth.html | _waveforms.py:L16 |  |  |  |  |  |  |  |
+| sawtooth | scipy.signal | function | required_now | waveforms | impl | codex | codex/refactor-scipy-waveforms-batch1 | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sawtooth.html | _waveforms.py:L16 | SawtoothWave1D<T>/SawtoothWaveConfig<T>/SawtoothWaveKernel<T> | sci-rs/src/signal/wave/mod.rs;sci-rs/src/signal/wave/kernels.rs |  |  |  |  | scalar width path implemented |
 | sepfir2d | scipy.signal | function | required_now | convolution | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sepfir2d.html | builtin |  |  |  |  |  |  |  |
 | sos2tf | scipy.signal | function | required_now | filter_design | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sos2tf.html | _filter_design.py:L1253 |  |  |  |  |  |  |  |
 | sos2zpk | scipy.signal | function | required_now | filter_design | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sos2zpk.html | _filter_design.py:L1301 |  |  |  |  |  |  |  |
@@ -202,7 +202,7 @@ Generated from local SciPy `1.14.1` by `scripts/generate_scipy_checklist_invento
 | sosfreqz | scipy.signal | function | required_now | filter_design | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.sosfreqz.html | _filter_design.py:L739 |  |  |  |  |  |  |  |
 | spectrogram | scipy.signal | function | required_now | spectral | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.spectrogram.html | _spectral_py.py:L626 |  |  |  |  |  |  |  |
 | spline_filter | scipy.signal | function | required_now | splines | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.spline_filter.html | _bsplines.py:L15 |  |  |  |  |  |  |  |
-| square | scipy.signal | function | required_now | waveforms | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.square.html | _waveforms.py:L88 |  |  |  |  |  |  |  |
+| square | scipy.signal | function | required_now | waveforms | impl | codex | codex/refactor-scipy-waveforms-batch1 | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.square.html | _waveforms.py:L88 | SquareWave1D<T>/SquareWaveConfig<T>/SquareWaveKernel<T> | sci-rs/src/signal/wave/mod.rs;sci-rs/src/signal/wave/kernels.rs |  |  |  |  | existing trait-first square kernel retained; coverage extended in waveform batch |
 | ss2tf | scipy.signal | function | required_now | lti | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.ss2tf.html | _lti_conversion.py:L196 |  |  |  |  |  |  |  |
 | ss2zpk | scipy.signal | function | required_now | lti | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.ss2zpk.html | _lti_conversion.py:L305 |  |  |  |  |  |  |  |
 | step | scipy.signal | function | required_now | lti | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.step.html | _ltisys.py:L2077 |  |  |  |  |  |  |  |
@@ -215,7 +215,7 @@ Generated from local SciPy `1.14.1` by `scripts/generate_scipy_checklist_invento
 | tf2ss | scipy.signal | function | required_now | lti | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.tf2ss.html | _lti_conversion.py:L18 |  |  |  |  |  |  |  |
 | tf2zpk | scipy.signal | function | required_now | filter_design | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.tf2zpk.html | _filter_design.py:L1037 |  |  |  |  |  |  |  |
 | unique_roots | scipy.signal | function | required_now | residue | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.unique_roots.html | _signaltools.py:L2497 |  |  |  |  |  |  |  |
-| unit_impulse | scipy.signal | function | required_now | waveforms | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.unit_impulse.html | _waveforms.py:L586 |  |  |  |  |  |  |  |
+| unit_impulse | scipy.signal | function | required_now | waveforms | impl | codex | codex/refactor-scipy-waveforms-batch1 | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.unit_impulse.html | _waveforms.py:L586 | UnitImpulse1D<T>/UnitImpulseConfig/UnitImpulseKernel | sci-rs/src/signal/wave/mod.rs;sci-rs/src/signal/wave/kernels.rs |  |  |  |  | 1D API implemented (`len`, optional `idx`) |
 | upfirdn | scipy.signal | function | required_now | multirate | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.upfirdn.html | _upfirdn.py:L107 |  |  |  |  |  |  |  |
 | vectorstrength | scipy.signal | function | required_now | filtering | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.vectorstrength.html | _signaltools.py:L3432 |  |  |  |  |  |  |  |
 | welch | scipy.signal | function | required_now | spectral | wishlist |  |  | https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.welch.html | _spectral_py.py:L300 |  |  |  |  |  |  |  |
