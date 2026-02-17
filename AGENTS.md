@@ -28,6 +28,9 @@ cargo test --no-default-features
 cargo test --no-default-features --features alloc
 cargo test --all-features
 cargo bench --all-features --no-run
+cargo run -p xtask -- contracts
+python /Users/jacobtrueb/Desktop/workspace/sci-rs/scripts/generate_scipy_checklist_inventory.py
+python /Users/jacobtrueb/Desktop/workspace/sci-rs/scripts/verify_scipy_checklist.py
 ```
 
 If any command fails, do not push.
@@ -137,3 +140,28 @@ For the trait-first refactor, contributors and agents must work in short verifie
 3. Commit locally.
 4. Update `/Users/jacobtrueb/Desktop/workspace/sci-rs/docs/REFACTOR_CHECKLIST.md`.
 5. Re-scan remaining interfaces and repeat.
+
+## 11. SciPy Checklist Operating Model
+
+For any feature PR targeting SciPy parity, contributors must update one row in:
+
+- `/Users/jacobtrueb/Desktop/workspace/sci-rs/docs/SCIPY_CHECKLIST.md`
+
+Process and handoff docs:
+
+1. `/Users/jacobtrueb/Desktop/workspace/sci-rs/docs/SCIPY_CHECKLIST_PROCESS.md`
+2. `/Users/jacobtrueb/Desktop/workspace/sci-rs/docs/SCIPY_AGENT_PACKET_TEMPLATE.md`
+3. `/Users/jacobtrueb/Desktop/workspace/sci-rs/docs/SCIPY_TRACE_PROTOCOL.md`
+
+Checklist sync and validation commands:
+
+```bash
+python /Users/jacobtrueb/Desktop/workspace/sci-rs/scripts/generate_scipy_checklist_inventory.py
+python /Users/jacobtrueb/Desktop/workspace/sci-rs/scripts/verify_scipy_checklist.py
+```
+
+Rules:
+
+1. Do not merge if checklist row status/evidence fields are stale.
+2. Keep `BadCoefficients` and `test` as `deferred_pythonism` unless maintainers explicitly change policy.
+3. Keep existing git safety and non-interactive plotting rules unchanged.
