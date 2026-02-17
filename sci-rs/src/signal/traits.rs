@@ -6,6 +6,12 @@ use crate::kernel::{ExecInvariantViolation, Read1D, Write1D};
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+#[cfg(feature = "alloc")]
+use nalgebra::Complex;
+
+/// Output tuple for splitting roots into conjugate-paired complex and real sets.
+#[cfg(feature = "alloc")]
+pub type ComplexSplit<T> = (Vec<Complex<T>>, Vec<Complex<T>>);
 
 /// 1D convolution capability.
 pub trait Convolve1D<T> {
@@ -213,6 +219,85 @@ pub trait IirDesign<T> {
 /// IIR design capability in no-alloc mode.
 #[cfg(not(feature = "alloc"))]
 pub trait IirDesign<T> {}
+
+/// ZPK-domain transform capability.
+#[cfg(feature = "alloc")]
+pub trait ZpkTransform<T>
+where
+    T: nalgebra::RealField + Copy,
+{
+    /// Run a ZPK-domain transform and allocate the transformed representation.
+    fn run_alloc(
+        &self,
+        zpk: crate::signal::filter::design::ZpkFormatFilter<T>,
+    ) -> Result<crate::signal::filter::design::ZpkFormatFilter<T>, ExecInvariantViolation>;
+}
+
+/// ZPK-domain transform capability in no-alloc mode.
+#[cfg(not(feature = "alloc"))]
+pub trait ZpkTransform<T> {}
+
+/// ZPK to transfer-function conversion capability.
+#[cfg(feature = "alloc")]
+pub trait ZpkToTfDesign<T>
+where
+    T: nalgebra::RealField,
+{
+    /// Convert poles/zeros/gain into transfer-function coefficients.
+    fn run_alloc(
+        &self,
+        zeros: &[Complex<T>],
+        poles: &[Complex<T>],
+        gain: T,
+    ) -> Result<crate::signal::filter::design::BaFormatFilter<T>, ExecInvariantViolation>;
+}
+
+/// ZPK to transfer-function conversion capability in no-alloc mode.
+#[cfg(not(feature = "alloc"))]
+pub trait ZpkToTfDesign<T> {}
+
+/// ZPK to SOS conversion capability.
+#[cfg(feature = "alloc")]
+pub trait ZpkToSosDesign<T>
+where
+    T: nalgebra::RealField + Copy,
+{
+    /// Convert poles/zeros/gain into second-order sections.
+    fn run_alloc(
+        &self,
+        zpk: crate::signal::filter::design::ZpkFormatFilter<T>,
+    ) -> Result<crate::signal::filter::design::SosFormatFilter<T>, ExecInvariantViolation>;
+}
+
+/// ZPK to SOS conversion capability in no-alloc mode.
+#[cfg(not(feature = "alloc"))]
+pub trait ZpkToSosDesign<T> {}
+
+/// Relative degree computation capability.
+#[cfg(feature = "alloc")]
+pub trait RelativeDegreeDesign<T> {
+    /// Compute `len(poles) - len(zeros)` after validation.
+    fn run_alloc(
+        &self,
+        zeros: &[Complex<T>],
+        poles: &[Complex<T>],
+    ) -> Result<usize, ExecInvariantViolation>;
+}
+
+/// Relative degree computation capability in no-alloc mode.
+#[cfg(not(feature = "alloc"))]
+pub trait RelativeDegreeDesign<T> {}
+
+/// Complex root pairing/splitting capability.
+#[cfg(feature = "alloc")]
+pub trait ComplexPairSplit<T> {
+    /// Split roots into conjugate-paired complex roots and real roots.
+    fn run_alloc(&self, roots: Vec<Complex<T>>) -> Result<ComplexSplit<T>, ExecInvariantViolation>;
+}
+
+/// Complex root pairing/splitting capability in no-alloc mode.
+#[cfg(not(feature = "alloc"))]
+pub trait ComplexPairSplit<T> {}
 
 /// Window generation capability.
 #[cfg(feature = "alloc")]

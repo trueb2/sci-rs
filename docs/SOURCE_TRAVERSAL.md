@@ -1,6 +1,6 @@
 # Source Traversal Log
 
-Last updated: 2026-02-16
+Last updated: 2026-02-17
 
 Status legend:
 - `refactored`: trait-first/kernel-first path is implemented and tested.
@@ -70,7 +70,7 @@ Status legend:
 | `sci-rs/src/signal/filter/lfilter_zi.rs` | partial | free function retained; kernel wrapper added |
 | `sci-rs/src/signal/filter/sosfilt_zi.rs` | partial | free function retained; kernel wrapper added |
 | `sci-rs/src/signal/filter/savgol_filter.rs` | partial | free functions retained; kernel wrapper added |
-| `sci-rs/src/signal/filter/ext.rs` | pending | helper API still panic/assert based |
+| `sci-rs/src/signal/filter/ext.rs` | partial | moved to checked `Result` API for pad/odd extension; no trait kernel yet |
 | `sci-rs/src/signal/filter/arraytools.rs` | pending | helper API pending trait policy |
 
 ## sci-rs/src/signal/filter/design
@@ -78,7 +78,7 @@ Status legend:
 | File | Status | Notes |
 | --- | --- | --- |
 | `sci-rs/src/signal/filter/design/mod.rs` | partial | mixed exports + kernel exports |
-| `sci-rs/src/signal/filter/design/kernels.rs` | refactored | trait-first `firwin/iirfilter/butter` kernels |
+| `sci-rs/src/signal/filter/design/kernels.rs` | refactored | trait-first kernels for `firwin/iirfilter/butter` + zpk helpers |
 | `sci-rs/src/signal/filter/design/firwin.rs` | partial | legacy function retained |
 | `sci-rs/src/signal/filter/design/iirfilter.rs` | partial | legacy function retained, panic paths remain |
 | `sci-rs/src/signal/filter/design/butter.rs` | partial | legacy function retained |
@@ -86,15 +86,15 @@ Status legend:
 | `sci-rs/src/signal/filter/design/filter_type.rs` | support | enum types |
 | `sci-rs/src/signal/filter/design/sos.rs` | support | SOS representation |
 | `sci-rs/src/signal/filter/design/kaiser.rs` | partial | legacy helpers |
-| `sci-rs/src/signal/filter/design/bilinear_zpk.rs` | pending | transform helper |
-| `sci-rs/src/signal/filter/design/cplx.rs` | pending | complex helper |
-| `sci-rs/src/signal/filter/design/lp2bp_zpk.rs` | pending | transform helper |
-| `sci-rs/src/signal/filter/design/lp2bs_zpk.rs` | pending | transform helper |
-| `sci-rs/src/signal/filter/design/lp2hp_zpk.rs` | pending | transform helper |
-| `sci-rs/src/signal/filter/design/lp2lp_zpk.rs` | pending | transform helper |
-| `sci-rs/src/signal/filter/design/relative_degree.rs` | pending | helper |
-| `sci-rs/src/signal/filter/design/zpk2sos.rs` | pending | helper |
-| `sci-rs/src/signal/filter/design/zpk2tf.rs` | pending | helper |
+| `sci-rs/src/signal/filter/design/bilinear_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/cplx.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/lp2bp_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/lp2bs_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/lp2hp_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/lp2lp_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/relative_degree.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/zpk2sos.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/zpk2tf.rs` | partial | legacy helper retained; validated kernel wrapper landed |
 
 ## sci-rs-core/src
 

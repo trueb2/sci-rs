@@ -1,6 +1,7 @@
 use core::{borrow::Borrow, cmp::min, iter::Sum, ops::SubAssign};
 use nalgebra::{DVector, RealField, Scalar};
 use num_traits::{Float, One, Zero};
+use sci_rs_core::{Error, Result};
 
 use super::{design::Sos, pad, sosfilt_dyn, sosfilt_zi_dyn, Pad};
 
@@ -14,7 +15,7 @@ use alloc::vec::Vec;
 ///
 ///
 #[inline]
-pub fn sosfiltfilt_dyn<YI, F>(y: YI, sos: &[Sos<F>]) -> Vec<F>
+pub fn sosfiltfilt_dyn<YI, F>(y: YI, sos: &[Sos<F>]) -> Result<Vec<F>>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
     YI: Iterator,
@@ -26,9 +27,15 @@ where
     let azeros = sos.iter().filter(|s| s.a[2] == F::zero()).count();
     let ntaps = ntaps - min(bzeros, azeros);
     let y = y.map(|yi| *yi.borrow()).collect::<Vec<F>>();
+    if y.is_empty() {
+        return Err(Error::InvalidArg {
+            arg: "y".into(),
+            reason: "input must be non-empty.".into(),
+        });
+    }
     let y_len = y.len();
     let x = DVector::<F>::from_vec(y);
-    let (edge, ext) = pad(Pad::Odd, None, x, 0, ntaps);
+    let (edge, ext) = pad(Pad::Odd, None, x, 0, ntaps)?;
 
     let mut init_sos = sos.to_vec();
     sosfilt_zi_dyn::<_, _, Sos<F>>(init_sos.iter_mut());
@@ -41,7 +48,10 @@ where
     }
     let y = sosfilt_dyn(ext.iter(), &mut sos_x);
 
-    let y0 = *y.last().unwrap();
+    let y0 = *y.last().ok_or(Error::InvalidArg {
+        arg: "y".into(),
+        reason: "input must be non-empty.".into(),
+    })?;
     let mut sos_y = init_sos;
     for s in sos_y.iter_mut() {
         s.zi0 *= y0;
@@ -53,7 +63,7 @@ where
         .take(y_len)
         .collect::<Vec<_>>();
     z.reverse();
-    z
+    Ok(z)
 }
 
 #[cfg(test)]
@@ -103,7 +113,7 @@ mod tests {
             .collect::<Vec<_>>();
         // println!("{:?}", &sin_wave);
 
-        let bp_wave = sosfiltfilt_dyn(sin_wave.iter(), &sos);
+        let bp_wave = sosfiltfilt_dyn(sin_wave.iter(), &sos).unwrap();
         println!("{:?}", bp_wave);
         assert_eq!(sin_wave.len(), bp_wave.len());
 
@@ -153,7 +163,7 @@ mod tests {
             .collect::<Vec<_>>();
         // println!("{:?}", &sin_wave);
 
-        let bp_wave = sosfiltfilt_dyn(sin_wave.iter(), &sos);
+        let bp_wave = sosfiltfilt_dyn(sin_wave.iter(), &sos).unwrap();
         assert_eq!(sin_wave.len(), bp_wave.len());
         println!("{:?}", bp_wave);
 

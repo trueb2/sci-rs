@@ -28,6 +28,11 @@ Legend:
 | signal | `FiltFilt1D<T>` | yes | yes | yes | reference parity + length checks |
 | design | `FirWinDesign<T>` | yes | yes | yes | `FirWinKernel` with constructor validation |
 | design | `IirDesign<T>` | yes | yes | yes | `IirFilterKernel` and `ButterKernel` |
+| design | `ZpkTransform<T>` | yes | yes | yes | `BilinearZpkKernel`, `Lp2*ZpkKernel` family |
+| design | `ZpkToTfDesign<T>` | yes | yes | yes | `ZpkToTfKernel` |
+| design | `ZpkToSosDesign<T>` | yes | yes | yes | `ZpkToSosKernel` |
+| design | `RelativeDegreeDesign<T>` | yes | yes | yes | `RelativeDegreeKernel` |
+| design | `ComplexPairSplit<T>` | yes | yes | yes | `CplxRealKernel` |
 | windows | `WindowGenerate<T>` | yes | yes | yes | `WindowKernel` and owned window builder |
 | stats | `MeanReduce1D<T>` | yes | yes | yes | `MeanKernel` |
 | stats | `VarianceReduce1D<T>` | yes | yes | yes | `VarianceKernel` |
@@ -63,8 +68,8 @@ This is the active line-by-line sweep list for remaining public free-function su
 | `signal/filter` | `sosfiltfilt_dyn` | partial | kernel exists; free function still primary helper |
 | `signal/filter` | `savgol_filter_dyn` / `savgol_coeffs_dyn` | partial | `SavgolFilterKernel` landed; coeffs API still legacy |
 | `signal/filter` | `lfilter_zi_dyn` / `sosfilt_zi_dyn` | partial | trait kernels landed; free fns retained |
-| `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | pending | helper utilities pending trait policy |
-| `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | partial | kernels for `firwin/iirfilter/butter` landed |
+| `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | partial | `pad`/`odd_ext_dyn` moved to checked `Result` path; `arraytools` trait coverage pending |
+| `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | partial | helper kernels for zpk transforms landed; legacy functions remain |
 | `signal/wave` | `square` (ndarray N-D) | partial | 1D trait kernel landed; N-D API remains legacy |
 | `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | partial | trait kernels landed; free functions retained as shims |
 | `linalg` | `companion_dyn` | partial | trait kernel landed; legacy free fn retained |
@@ -82,6 +87,6 @@ This is the active line-by-line sweep list for remaining public free-function su
 ## Next Interfaces In Flight
 
 1. Legacy free-function cleanup and quarantine/deprecation policy.
-2. Convert remaining panic-based validation paths into deterministic config errors where feasible.
-3. Add trait-first coverage for remaining helper utilities (`arraytools`, extension helpers).
+2. Add trait-first coverage for remaining helper utilities (`arraytools` axis helpers).
+3. Continue reducing panic-based legacy code paths in `iirfilter` and companion legacy surfaces.
 4. Expand allocation/perf assertions for hot paths in benchmark suites.

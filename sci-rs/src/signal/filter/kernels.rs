@@ -135,7 +135,11 @@ where
                 got: out_slice.len(),
             });
         }
-        let y = super::sosfiltfilt_dyn(input.iter(), &self.sos);
+        let y = super::sosfiltfilt_dyn(input.iter(), &self.sos).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "sosfiltfilt kernel execution failed",
+            }
+        })?;
         out_slice.copy_from_slice(&y);
         Ok(())
     }
@@ -145,7 +149,11 @@ where
         I: Read1D<F> + ?Sized,
     {
         let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
-        Ok(super::sosfiltfilt_dyn(input.iter(), &self.sos))
+        super::sosfiltfilt_dyn(input.iter(), &self.sos).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "sosfiltfilt kernel execution failed",
+            }
+        })
     }
 }
 
@@ -572,7 +580,7 @@ mod tests {
 
         let actual = kernel.run_alloc(&x).expect("sosfiltfilt should run");
         let sos = Sos::from_scipy_dyn(1, vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
-        let expected = sosfiltfilt_dyn(x.iter(), &sos);
+        let expected = sosfiltfilt_dyn(x.iter(), &sos).expect("reference sosfiltfilt should run");
         assert_eq!(actual, expected);
     }
 

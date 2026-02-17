@@ -20,6 +20,7 @@ use alloc::vec::Vec;
 /// Choice of zeros/poles pairing for the zpk2sos conversion
 ///
 /// Matches scipy.signal.zpk2sos pairing
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ZpkPairing {
     /// Default
     Minimal,
