@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 ///
 ///
 #[inline]
-pub fn sosfiltfilt_checked<F>(y: &[F], sos: &[Sos<F>]) -> Result<Vec<F>>
+pub fn sosfiltfilt_checked_slice<F>(y: &[F], sos: &[Sos<F>]) -> Result<Vec<F>>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
 {
@@ -63,6 +63,20 @@ where
 }
 
 ///
+/// Checked `sosfiltfilt` adapter for iterator-like inputs.
+///
+#[inline]
+pub fn sosfiltfilt_checked<YI, F>(y: YI, sos: &[Sos<F>]) -> Result<Vec<F>>
+where
+    F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
+    YI: IntoIterator,
+    YI::Item: Borrow<F>,
+{
+    let y = y.into_iter().map(|yi| *yi.borrow()).collect::<Vec<F>>();
+    sosfiltfilt_checked_slice(&y, sos)
+}
+
+///
 /// A forward-backward digital filter using cascaded second-order sections.
 ///
 #[inline]
@@ -72,8 +86,7 @@ where
     YI: IntoIterator,
     YI::Item: Borrow<F>,
 {
-    let y = y.into_iter().map(|yi| *yi.borrow()).collect::<Vec<F>>();
-    sosfiltfilt_checked(&y, sos)
+    sosfiltfilt_checked(y, sos)
 }
 
 #[cfg(test)]

@@ -69,7 +69,7 @@ Status legend:
 | `sci-rs/src/signal/filter/lfilter.rs` | partial | free-function shim has kernel-first 1D fast path with contiguous-slice no-copy route |
 | `sci-rs/src/signal/filter/filtfilt.rs` | partial | checked slice wrapper (`filtfilt_checked`) and kernel-backed `filtfilt_dyn` compatibility path |
 | `sci-rs/src/signal/filter/sosfilt.rs` | partial | checked slice wrapper (`sosfilt_checked_slice`) + checked single-sample wrapper |
-| `sci-rs/src/signal/filter/sosfiltfilt.rs` | partial | checked slice wrapper (`sosfiltfilt_checked`) now routes through checked slice SOS execution path |
+| `sci-rs/src/signal/filter/sosfiltfilt.rs` | partial | checked slice wrapper (`sosfiltfilt_checked_slice`) now routes through checked slice SOS execution path |
 | `sci-rs/src/signal/filter/lfilter_zi.rs` | partial | checked wrapper (`lfilter_zi_checked`) + kernel path |
 | `sci-rs/src/signal/filter/sosfilt_zi.rs` | partial | checked slice wrapper (`sosfilt_zi_checked_slice`) + checked iterator wrapper + kernel path |
 | `sci-rs/src/signal/filter/savgol_filter.rs` | partial | checked slice wrapper (`savgol_filter_checked_slice`) + iterator adapter + trait kernels for filter/coeff design |
