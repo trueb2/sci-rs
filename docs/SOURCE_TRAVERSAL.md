@@ -71,7 +71,7 @@ Status legend:
 | `sci-rs/src/signal/filter/sosfilt_zi.rs` | partial | free function retained; kernel wrapper added |
 | `sci-rs/src/signal/filter/savgol_filter.rs` | partial | free functions retained; kernel wrapper added |
 | `sci-rs/src/signal/filter/ext.rs` | partial | moved to checked `Result` API for pad/odd extension; no trait kernel yet |
-| `sci-rs/src/signal/filter/arraytools.rs` | pending | helper API pending trait policy |
+| `sci-rs/src/signal/filter/arraytools.rs` | partial | checked `AxisSliceKernel`/`AxisReverseKernel` landed; legacy helpers retained |
 
 ## sci-rs/src/signal/filter/design
 

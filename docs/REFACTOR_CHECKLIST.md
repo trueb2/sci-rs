@@ -68,7 +68,7 @@ This is the active line-by-line sweep list for remaining public free-function su
 | `signal/filter` | `sosfiltfilt_dyn` | partial | kernel exists; free function still primary helper |
 | `signal/filter` | `savgol_filter_dyn` / `savgol_coeffs_dyn` | partial | `SavgolFilterKernel` landed; coeffs API still legacy |
 | `signal/filter` | `lfilter_zi_dyn` / `sosfilt_zi_dyn` | partial | trait kernels landed; free fns retained |
-| `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | partial | `pad`/`odd_ext_dyn` moved to checked `Result` path; `arraytools` trait coverage pending |
+| `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | partial | checked path landed for `pad`/`odd_ext_dyn` and `AxisSliceKernel`/`AxisReverseKernel`; legacy helpers remain |
 | `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | partial | helper kernels for zpk transforms landed; legacy functions remain |
 | `signal/wave` | `square` (ndarray N-D) | partial | 1D trait kernel landed; N-D API remains legacy |
 | `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | partial | trait kernels landed; free functions retained as shims |
@@ -87,6 +87,6 @@ This is the active line-by-line sweep list for remaining public free-function su
 ## Next Interfaces In Flight
 
 1. Legacy free-function cleanup and quarantine/deprecation policy.
-2. Add trait-first coverage for remaining helper utilities (`arraytools` axis helpers).
-3. Continue reducing panic-based legacy code paths in `iirfilter` and companion legacy surfaces.
+2. Continue reducing panic-based legacy code paths in `iirfilter` and companion legacy surfaces.
+3. Promote more legacy helper entry points to kernel-first API style where practical.
 4. Expand allocation/perf assertions for hot paths in benchmark suites.
