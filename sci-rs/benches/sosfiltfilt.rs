@@ -2,10 +2,13 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use dasp_signal::{rate, Signal};
 use sci_rs::kernel::KernelLifecycle;
 use sci_rs::signal::filter::{
-    design::{butter_dyn, DigitalFilter, FilterBandType, FilterOutputType, Sos, SosFormatFilter},
+    design::{
+        ButterConfig, ButterKernel, DigitalFilter, FilterBandType, FilterOutputType, Sos,
+        SosFormatFilter,
+    },
     SosFiltFiltConfig, SosFiltFiltKernel,
 };
-use sci_rs::signal::traits::SosFiltFilt1D;
+use sci_rs::signal::traits::{IirDesign, SosFiltFilt1D};
 
 /// TLDR: 4.6x faster
 
@@ -75,14 +78,19 @@ fn butter_sosfiltfilt_100x(c: &mut Criterion) {
 
 fn butter_sosfiltfilt_100x_10th(c: &mut Criterion) {
     // 10th order butterworth bandpass 10 to 50 at 1666Hz
-    let DigitalFilter::Sos(SosFormatFilter { sos }) = butter_dyn(
-        10,
-        vec![10.0, 50.0],
-        Some(FilterBandType::Bandpass),
-        Some(false),
-        Some(FilterOutputType::Sos),
-        Some(1666.),
-    ) else {
+    let butter_kernel = ButterKernel::try_new(ButterConfig {
+        order: 10,
+        wn: vec![10.0, 50.0],
+        btype: Some(FilterBandType::Bandpass),
+        analog: Some(false),
+        output: Some(FilterOutputType::Sos),
+        fs: Some(1666.0),
+    })
+    .expect("butter kernel config should be valid");
+    let DigitalFilter::Sos(SosFormatFilter { sos }) = butter_kernel
+        .run_alloc()
+        .expect("butter kernel should produce SOS output")
+    else {
         panic!();
     };
     let kernel = SosFiltFiltKernel::try_new(SosFiltFiltConfig { sos }).expect("valid sos config");

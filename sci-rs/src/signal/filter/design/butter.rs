@@ -19,7 +19,7 @@ use super::{iirfilter_checked, DigitalFilter, FilterBandType, FilterOutputType, 
 /// <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.butter.html>
 ///
 #[cfg(feature = "alloc")]
-pub fn butter_dyn<F>(
+pub(crate) fn butter_dyn<F>(
     order: usize,
     wn: Vec<F>,
     btype: Option<FilterBandType>,
@@ -35,7 +35,7 @@ where
 
 /// Checked Butterworth design entrypoint used by trait-first kernels.
 #[cfg(feature = "alloc")]
-pub fn butter_checked<F>(
+pub(crate) fn butter_checked<F>(
     order: usize,
     wn: Vec<F>,
     btype: Option<FilterBandType>,

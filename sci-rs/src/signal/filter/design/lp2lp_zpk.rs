@@ -48,7 +48,7 @@ use alloc::vec::Vec;
 /// .. math:: s \rightarrow \frac{s}{\omega_0}  
 /// .. versionadded:: 1.1.0
 #[cfg(feature = "alloc")]
-pub fn lp2lp_zpk_dyn<F>(zpk: ZpkFormatFilter<F>, wo: Option<F>) -> ZpkFormatFilter<F>
+pub(crate) fn lp2lp_zpk_dyn<F>(zpk: ZpkFormatFilter<F>, wo: Option<F>) -> ZpkFormatFilter<F>
 where
     F: RealField + Float,
 {

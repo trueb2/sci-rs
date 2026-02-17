@@ -1,9 +1,11 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use ndarray::{array, Array1, ArrayView1};
 use rand::rngs::ThreadRng;
-use sci_rs::signal::filter::design::{firwin_dyn, FilterBandType};
+use sci_rs::kernel::KernelLifecycle;
+use sci_rs::signal::filter::design::{FilterBandType, FirWinConfig, FirWinKernel};
 use sci_rs::signal::filter::{FiltFilt, FiltFiltPad};
-use sci_rs::signal::windows::Hamming;
+use sci_rs::signal::traits::FirWinDesign;
+use sci_rs::signal::windows::WindowBuilderOwned;
 use std::num::NonZeroUsize;
 
 /// Get a randomized signal from instance of `rng`.
@@ -65,18 +67,21 @@ fn filtfilt_1dim(c: &mut Criterion) {
     const DECIMATION_FACTOR: usize = 50;
     const FILTER_ORDER: usize = DECIMATION_FACTOR * 20;
 
-    // Finite impulse response from Hamming window;
-    let b: Array1<f64> = firwin_dyn(
-        FILTER_ORDER + 1,
-        &[1. / (DECIMATION_FACTOR as f64)],
-        None,
-        None::<&Hamming>,
-        &FilterBandType::Lowpass,
-        None,
-        None,
-    )
-    .unwrap()
-    .into();
+    // Finite impulse response from a Hamming-windowed low-pass design.
+    let fir_kernel = FirWinKernel::try_new(FirWinConfig {
+        numtaps: FILTER_ORDER + 1,
+        cutoff: vec![1. / (DECIMATION_FACTOR as f64)],
+        width: None,
+        window: Some(WindowBuilderOwned::Hamming),
+        pass_zero: FilterBandType::Lowpass,
+        scale: None,
+        fs: None,
+    })
+    .expect("firwin kernel config should be valid");
+    let b: Array1<f64> = fir_kernel
+        .run_alloc()
+        .expect("firwin kernel should produce benchmark coefficients")
+        .into();
     let a = array![1.];
 
     let (_, signal) = randomized_signal(

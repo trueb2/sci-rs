@@ -13,7 +13,7 @@ pub use kernels::*;
 ///
 /// The square wave has period `2*pi`, has value `+1` from `0` to
 /// `2*pi*duty`, and `-1` from `2*pi*duty` to `2*pi`.
-pub fn square<F, S, D>(t: &ArrayBase<S, D>, duty: F) -> Array<F, D>
+pub(crate) fn square<F, S, D>(t: &ArrayBase<S, D>, duty: F) -> Array<F, D>
 where
     F: RealField + Copy,
     S: Data<Elem = F>,
@@ -43,7 +43,7 @@ where
 ///
 /// The waveform has period `2*pi`, rises from `-1` to `1` over
 /// `[0, width*2*pi)`, and falls from `1` to `-1` over `[width*2*pi, 2*pi)`.
-pub fn sawtooth<F, S, D>(t: &ArrayBase<S, D>, width: F) -> Array<F, D>
+pub(crate) fn sawtooth<F, S, D>(t: &ArrayBase<S, D>, width: F) -> Array<F, D>
 where
     F: RealField + Copy,
     S: Data<Elem = F>,
@@ -73,7 +73,7 @@ where
 ///
 /// The output is `cos(phase + phi)`, where `phase` is the integral of
 /// instantaneous frequency according to `method`.
-pub fn chirp<F, S, D>(
+pub(crate) fn chirp<F, S, D>(
     t: &ArrayBase<S, D>,
     f0: F,
     t1: F,
@@ -133,7 +133,7 @@ where
 }
 
 /// Return a Gaussian-modulated sinusoid (in-phase component).
-pub fn gausspulse<F, S, D>(t: &ArrayBase<S, D>, fc: F, bw: F, bwr: F) -> Array<F, D>
+pub(crate) fn gausspulse<F, S, D>(t: &ArrayBase<S, D>, fc: F, bw: F, bwr: F) -> Array<F, D>
 where
     F: RealField + Copy + FromPrimitive,
     S: Data<Elem = F>,
@@ -162,7 +162,7 @@ where
 /// Return selected components of a Gaussian-modulated sinusoid.
 ///
 /// This corresponds to SciPy's `retquad`/`retenv` switches.
-pub fn gausspulse_with_options<F, S, D>(
+pub(crate) fn gausspulse_with_options<F, S, D>(
     t: &ArrayBase<S, D>,
     fc: F,
     bw: F,
@@ -192,7 +192,7 @@ where
 }
 
 /// Return cutoff time for `gausspulse` at reference level `tpr` in dB.
-pub fn gausspulse_cutoff<F>(fc: F, bw: F, bwr: F, tpr: F) -> F
+pub(crate) fn gausspulse_cutoff<F>(fc: F, bw: F, bwr: F, tpr: F) -> F
 where
     F: RealField + Copy + FromPrimitive,
 {
@@ -204,7 +204,7 @@ where
 }
 
 /// Return a polynomial-frequency swept cosine waveform.
-pub fn sweep_poly<F, S, D>(t: &ArrayBase<S, D>, poly: &[F], phi_deg: F) -> Array<F, D>
+pub(crate) fn sweep_poly<F, S, D>(t: &ArrayBase<S, D>, poly: &[F], phi_deg: F) -> Array<F, D>
 where
     F: RealField + Copy + FromPrimitive,
     S: Data<Elem = F>,
@@ -234,7 +234,7 @@ where
 ///
 /// `len` defines output length. `idx` selects the index whose value is `1`;
 /// when omitted, index `0` is used.
-pub fn unit_impulse<F>(len: usize, idx: Option<usize>) -> Array1<F>
+pub(crate) fn unit_impulse<F>(len: usize, idx: Option<usize>) -> Array1<F>
 where
     F: RealField + Copy,
 {

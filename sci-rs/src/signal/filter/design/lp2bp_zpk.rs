@@ -57,7 +57,11 @@ use alloc::vec::Vec;
 ///
 /// .. versionadded:: 1.1.0
 #[cfg(feature = "alloc")]
-pub fn lp2bp_zpk_dyn<F>(zpk: ZpkFormatFilter<F>, wo: Option<F>, bw: Option<F>) -> ZpkFormatFilter<F>
+pub(crate) fn lp2bp_zpk_dyn<F>(
+    zpk: ZpkFormatFilter<F>,
+    wo: Option<F>,
+    bw: Option<F>,
+) -> ZpkFormatFilter<F>
 where
     F: RealField + Float,
 {

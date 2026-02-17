@@ -757,7 +757,7 @@ where
 }
 
 /// Return indices of relative extrema according to `comparator`.
-pub fn argrelextrema<F>(
+pub(crate) fn argrelextrema<F>(
     x: &[F],
     comparator: fn(F, F) -> bool,
     order: usize,
@@ -771,7 +771,7 @@ where
 }
 
 /// Return indices of relative maxima.
-pub fn argrelmax<F>(x: &[F], order: usize) -> Result<Vec<usize>, ExecInvariantViolation>
+pub(crate) fn argrelmax<F>(x: &[F], order: usize) -> Result<Vec<usize>, ExecInvariantViolation>
 where
     F: PartialOrd + Copy,
 {
@@ -784,7 +784,7 @@ where
 }
 
 /// Return indices of relative minima.
-pub fn argrelmin<F>(x: &[F], order: usize) -> Result<Vec<usize>, ExecInvariantViolation>
+pub(crate) fn argrelmin<F>(x: &[F], order: usize) -> Result<Vec<usize>, ExecInvariantViolation>
 where
     F: PartialOrd + Copy,
 {
@@ -797,7 +797,7 @@ where
 }
 
 /// Find local peaks with optional height and distance filtering.
-pub fn find_peaks<F>(
+pub(crate) fn find_peaks<F>(
     x: &[F],
     options: FindPeaksOptions<F>,
 ) -> Result<Vec<usize>, ExecInvariantViolation>
@@ -809,7 +809,7 @@ where
 }
 
 /// Compute peak prominences and base indices.
-pub fn peak_prominences<F>(
+pub(crate) fn peak_prominences<F>(
     x: &[F],
     peaks: &[usize],
 ) -> Result<PeakProminencesResult<F>, ExecInvariantViolation>
@@ -822,7 +822,7 @@ where
 }
 
 /// Compute peak widths at relative height.
-pub fn peak_widths<F>(
+pub(crate) fn peak_widths<F>(
     x: &[F],
     peaks: &[usize],
     rel_height: F,
@@ -836,7 +836,7 @@ where
 }
 
 /// Continuous wavelet transform using a Ricker wavelet family.
-pub fn cwt<F>(x: &[F], widths: &[usize]) -> Result<Vec<Vec<F>>, ExecInvariantViolation>
+pub(crate) fn cwt<F>(x: &[F], widths: &[usize]) -> Result<Vec<Vec<F>>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
@@ -848,7 +848,10 @@ where
 }
 
 /// Find peaks from a wavelet-enhanced score map.
-pub fn find_peaks_cwt<F>(x: &[F], widths: &[usize]) -> Result<Vec<usize>, ExecInvariantViolation>
+pub(crate) fn find_peaks_cwt<F>(
+    x: &[F],
+    widths: &[usize],
+) -> Result<Vec<usize>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {

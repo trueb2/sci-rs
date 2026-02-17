@@ -403,7 +403,7 @@ where
 }
 
 /// Upsample by `up`, apply FIR `h`, and downsample by `down`.
-pub fn upfirdn<F>(
+pub(crate) fn upfirdn<F>(
     h: &[F],
     x: &[F],
     up: usize,
@@ -425,7 +425,11 @@ where
 ///
 /// This implementation targets deterministic embedded-friendly behavior and
 /// supports the common `up/down` ratio contract from SciPy's `resample_poly`.
-pub fn resample_poly<F>(x: &[F], up: usize, down: usize) -> Result<Vec<F>, ExecInvariantViolation>
+pub(crate) fn resample_poly<F>(
+    x: &[F],
+    up: usize,
+    down: usize,
+) -> Result<Vec<F>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {
@@ -435,7 +439,7 @@ where
 }
 
 /// Decimate by integer factor `q`.
-pub fn decimate<F>(x: &[F], q: usize) -> Result<Vec<F>, ExecInvariantViolation>
+pub(crate) fn decimate<F>(x: &[F], q: usize) -> Result<Vec<F>, ExecInvariantViolation>
 where
     F: Float + Copy + FromPrimitive,
 {

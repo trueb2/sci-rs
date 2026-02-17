@@ -379,7 +379,7 @@ lfilter_for_dim!(6);
 ///
 /// # Examples
 /// On a 1-dimensional signal:
-/// ```
+/// ```ignore
 /// use ndarray::{array, ArrayBase, Array1, ArrayView1, Dim, Ix, OwnedRepr};
 /// use sci_rs::signal::filter::lfilter;
 ///
@@ -402,7 +402,7 @@ lfilter_for_dim!(6);
 /// Currently yet to implement for `a.len() > 1`.
 // NOTE: zi's TypeSig inherits from lfilter's output, in accordance with examples section of
 // documentation, both lfilter_zi and this should eventually support NDArray.
-pub fn lfilter<'a, T, S, D>(
+pub(crate) fn lfilter<'a, T, S, D>(
     b: ArrayView1<'a, T>,
     a: ArrayView1<'a, T>,
     x: ArrayBase<S, D>,

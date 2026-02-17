@@ -43,7 +43,7 @@ For each claimed symbol:
    - `try_new(config) -> Result<Kernel, ConfigError>`
    - `run_into(...)` first
    - optional `run_alloc(...)` under `alloc`
-2. Add compatibility free-function shim only as thin wrapper over kernel execution.
+2. Do not add public free-function shims; any helper wrappers must stay internal (`pub(crate)`).
 3. Add deterministic constructor validation for invalid argument/config shape cases.
 4. Move checklist status to `impl` once code is in progress.
 

@@ -53,7 +53,10 @@ use super::{
 /// --------
 /// _cplxpair
 #[cfg(feature = "alloc")]
-pub fn cplxreal_dyn<F>(z: Vec<Complex<F>>, tol: Option<F>) -> (Vec<Complex<F>>, Vec<Complex<F>>)
+pub(crate) fn cplxreal_dyn<F>(
+    z: Vec<Complex<F>>,
+    tol: Option<F>,
+) -> (Vec<Complex<F>>, Vec<Complex<F>>)
 where
     F: RealField + Float,
 {
@@ -62,7 +65,10 @@ where
 
 /// Checked complex-pair splitting helper used by trait-first kernels.
 #[cfg(feature = "alloc")]
-pub fn cplxreal_checked<F>(z: Vec<Complex<F>>, tol: Option<F>) -> Result<ComplexSplit<F>, Error>
+pub(crate) fn cplxreal_checked<F>(
+    z: Vec<Complex<F>>,
+    tol: Option<F>,
+) -> Result<ComplexSplit<F>, Error>
 where
     F: RealField + Float,
 {
@@ -192,7 +198,7 @@ where
 }
 
 #[cfg(feature = "alloc")]
-pub fn sort_cplx_dyn<F: ComplexField>(x: &mut [F]) {
+pub(crate) fn sort_cplx_dyn<F: ComplexField>(x: &mut [F]) {
     x.sort_unstable_by(|a, b| {
         match a
             .clone()

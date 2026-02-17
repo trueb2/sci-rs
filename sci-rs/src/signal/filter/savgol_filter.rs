@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 ///
 /// Design coefficients for a Savitzky-Golay filter and convolve with data using nearest edge padding.
 ///
-pub fn savgol_filter_dyn<YI, F>(
+pub(crate) fn savgol_filter_dyn<YI, F>(
     y: YI,
     window_length: usize,
     polyorder: usize,
@@ -41,7 +41,7 @@ where
 /// Checked Savitzky-Golay filtering entrypoint.
 ///
 /// This is the refactor-safe path used by trait-first kernels.
-pub fn savgol_filter_checked_slice<F>(
+pub(crate) fn savgol_filter_checked_slice<F>(
     y: &[F],
     window_length: usize,
     polyorder: usize,
@@ -93,7 +93,7 @@ where
 /// Checked Savitzky-Golay filtering entrypoint.
 ///
 /// This is the refactor-safe path used by trait-first kernels.
-pub fn savgol_filter_checked<YI, F>(
+pub(crate) fn savgol_filter_checked<YI, F>(
     y: YI,
     window_length: usize,
     polyorder: usize,
@@ -117,7 +117,7 @@ where
 /// This function is sensitive to f64 and f32 primitives due to use of least squares.
 /// The coefficients may go to zero for higher order polynomials and larger window lengths.
 ///
-pub fn savgol_coeffs_dyn<F>(
+pub(crate) fn savgol_coeffs_dyn<F>(
     window_length: usize,
     polyorder: usize,
     deriv: Option<usize>,
@@ -133,7 +133,7 @@ where
 ///
 /// Checked Savitzky-Golay coefficient design entrypoint.
 ///
-pub fn savgol_coeffs_checked<F>(
+pub(crate) fn savgol_coeffs_checked<F>(
     window_length: usize,
     polyorder: usize,
     deriv: Option<usize>,

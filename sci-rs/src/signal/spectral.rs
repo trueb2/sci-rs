@@ -1256,14 +1256,17 @@ impl SosFreqz1D for SosFreqzKernel {
 }
 
 /// Estimate one-sided power spectral density using a periodogram.
-pub fn periodogram(x: &[f64], fs: f64) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation> {
+pub(crate) fn periodogram(
+    x: &[f64],
+    fs: f64,
+) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation> {
     let kernel = PeriodogramKernel::try_new(PeriodogramConfig { fs })
         .map_err(ExecInvariantViolation::from)?;
     kernel.run_alloc(x)
 }
 
 /// Estimate PSD with Welch's method using Hann windows and 50% overlap.
-pub fn welch(
+pub(crate) fn welch(
     x: &[f64],
     fs: f64,
     nperseg: usize,
@@ -1274,7 +1277,7 @@ pub fn welch(
 }
 
 /// Estimate cross power spectral density with Welch averaging.
-pub fn csd(
+pub(crate) fn csd(
     x: &[f64],
     y: &[f64],
     fs: f64,
@@ -1286,7 +1289,7 @@ pub fn csd(
 }
 
 /// Estimate magnitude-squared coherence from Welch/CSD estimates.
-pub fn coherence(
+pub(crate) fn coherence(
     x: &[f64],
     y: &[f64],
     fs: f64,
@@ -1298,7 +1301,7 @@ pub fn coherence(
 }
 
 /// Short-time Fourier transform (one-sided).
-pub fn stft(
+pub(crate) fn stft(
     x: &[f64],
     fs: f64,
     nperseg: usize,
@@ -1314,7 +1317,7 @@ pub fn stft(
 }
 
 /// Inverse STFT using overlap-add with Hann synthesis.
-pub fn istft(
+pub(crate) fn istft(
     zxx: &[Vec<Complex<f64>>],
     fs: f64,
     nperseg: usize,
@@ -1330,7 +1333,7 @@ pub fn istft(
 }
 
 /// Spectrogram from STFT magnitude squared.
-pub fn spectrogram(
+pub(crate) fn spectrogram(
     x: &[f64],
     fs: f64,
     nperseg: usize,
@@ -1347,7 +1350,7 @@ pub fn spectrogram(
 }
 
 /// Frequency response of digital filter coefficients.
-pub fn freqz(
+pub(crate) fn freqz(
     b: &[f64],
     a: &[f64],
     wor_n: usize,
@@ -1358,7 +1361,7 @@ pub fn freqz(
 }
 
 /// Frequency response of SOS cascades.
-pub fn sosfreqz(
+pub(crate) fn sosfreqz(
     sos: &[Sos<f64>],
     wor_n: usize,
 ) -> Result<(Vec<f64>, Vec<Complex<f64>>), ExecInvariantViolation> {

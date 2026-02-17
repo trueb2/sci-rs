@@ -217,7 +217,7 @@ where
 ///
 /// # Panics
 /// - Start/stop elements are out of bounds.
-pub fn axis_slice<A, S, D>(
+pub(crate) fn axis_slice<A, S, D>(
     a: &ArrayBase<S, D>,
     start: Option<isize>,
     end: Option<isize>,
@@ -337,7 +337,7 @@ where
 /// # Parameters
 /// * `a`: Array being sliced from.
 /// * `axis`: `Option<isize>`. None defaults to -1.
-pub fn axis_reverse<A, S, D>(
+pub(crate) fn axis_reverse<A, S, D>(
     a: &ArrayBase<S, D>,
     axis: Option<isize>,
 ) -> Result<ArrayView<'_, A, D>>

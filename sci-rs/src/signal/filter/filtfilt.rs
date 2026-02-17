@@ -204,7 +204,7 @@ where
 ///
 /// Kernel-backed 1D compatibility wrapper for filtfilt.
 ///
-pub fn filtfilt_checked<T>(
+pub(crate) fn filtfilt_checked<T>(
     b: &[T],
     a: &[T],
     x: &[T],
@@ -238,7 +238,12 @@ where
 ///
 /// Kernel-backed 1D compatibility wrapper for filtfilt.
 ///
-pub fn filtfilt_dyn<T, YI>(b: &[T], a: &[T], y: YI, padding: Option<FiltFiltPad>) -> Result<Vec<T>>
+pub(crate) fn filtfilt_dyn<T, YI>(
+    b: &[T],
+    a: &[T],
+    y: YI,
+    padding: Option<FiltFiltPad>,
+) -> Result<Vec<T>>
 where
     T: Clone
         + Add<T, Output = T>

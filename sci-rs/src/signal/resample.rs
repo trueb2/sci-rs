@@ -144,7 +144,10 @@ fn resample_impl<F: Float + FftNum>(x: &[F], n: usize) -> Vec<F> {
 ///    b. If downsampling, truncate higher frequency bins
 /// 2. Convert back to the time-domain.
 ///
-pub fn resample<F: Float + FftNum>(x: &[F], n: usize) -> Result<Vec<F>, ExecInvariantViolation> {
+pub(crate) fn resample<F: Float + FftNum>(
+    x: &[F],
+    n: usize,
+) -> Result<Vec<F>, ExecInvariantViolation> {
     let kernel = ResampleKernel::try_new(ResampleConfig { target_len: n })
         .map_err(ExecInvariantViolation::from)?;
     kernel.run_alloc(x)

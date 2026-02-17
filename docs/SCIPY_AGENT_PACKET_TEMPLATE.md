@@ -28,7 +28,6 @@ Use this template when claiming a symbol from `/Users/jacobtrueb/Desktop/workspa
 - Trait(s):
 - Config type(s):
 - Kernel type(s):
-- Compatibility shim entrypoint(s):
 - Constructor validation rules added:
 
 ## 5. Tests Added

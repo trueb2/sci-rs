@@ -23,7 +23,7 @@ use alloc::vec::Vec;
 ///
 /// <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.lfilter_zi.html#scipy.signal.lfilter_zi>
 #[inline]
-pub fn lfilter_zi_dyn<F>(b: &[F], a: &[F]) -> Array1<F>
+pub(crate) fn lfilter_zi_dyn<F>(b: &[F], a: &[F]) -> Array1<F>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
 {
@@ -33,7 +33,7 @@ where
 ///
 /// Checked `lfilter_zi` entrypoint used by trait-first kernels.
 ///
-pub fn lfilter_zi_checked<F>(b: &[F], a: &[F]) -> Result<Array1<F>>
+pub(crate) fn lfilter_zi_checked<F>(b: &[F], a: &[F]) -> Result<Array1<F>>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
 {

@@ -222,7 +222,7 @@ fn correlate_impl<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -
 /// # Returns
 /// A Vec containing the discrete linear convolution of `in1` with `in2`.
 /// For Full mode, the output length will be `in1.len() + in2.len() - 1`.
-pub fn fftconvolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> Vec<F> {
+pub(crate) fn fftconvolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) -> Vec<F> {
     if in1.is_empty() || in2.is_empty() {
         return Vec::new();
     }
@@ -297,7 +297,7 @@ pub fn fftconvolve<F: Float + FftNum>(in1: &[F], in2: &[F], mode: ConvolveMode) 
 /// # Returns
 /// A Vec containing the convolution of `in1` with `in2`.
 /// With Full mode, the output length will be `in1.len() + in2.len() - 1`.
-pub fn convolve<F: Float + FftNum>(
+pub(crate) fn convolve<F: Float + FftNum>(
     in1: &[F],
     in2: &[F],
     mode: ConvolveMode,
@@ -319,7 +319,7 @@ pub fn convolve<F: Float + FftNum>(
 /// # Returns
 /// A Vec containing the cross-correlation of `in1` with `in2`.
 /// With Full mode, the output length will be `in1.len() + in2.len() - 1`.
-pub fn correlate<F: Float + FftNum>(
+pub(crate) fn correlate<F: Float + FftNum>(
     in1: &[F],
     in2: &[F],
     mode: ConvolveMode,

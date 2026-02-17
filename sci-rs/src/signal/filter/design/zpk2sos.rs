@@ -43,7 +43,7 @@ enum WhichNearestComplex {
 ///     ``(n_sections, 6)``. See `sosfilt` for the SOS filter format
 ///     specification.
 #[cfg(feature = "alloc")]
-pub fn zpk2sos_dyn<F>(
+pub(crate) fn zpk2sos_dyn<F>(
     order: usize,
     zpk: ZpkFormatFilter<F>,
     pairing: Option<ZpkPairing>,

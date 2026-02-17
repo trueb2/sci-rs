@@ -23,18 +23,18 @@ use alloc::vec::Vec;
 /// <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.lfilter_zi.html#scipy.signal.lfilter_zi>
 ///
 ///
-pub fn sosfilt_zi_dyn<'a, F, I, S>(s: I)
+pub(crate) fn sosfilt_zi_dyn<'a, F, I>(s: I)
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
     I: IntoIterator<Item = &'a mut Sos<F>>,
 {
-    sosfilt_zi_checked::<F, I, S>(s).expect("invalid sosfilt_zi configuration");
+    sosfilt_zi_checked::<F, I>(s).expect("invalid sosfilt_zi configuration");
 }
 
 ///
 /// Checked `sosfilt_zi` entrypoint used by trait-first kernels.
 ///
-pub fn sosfilt_zi_checked_slice<F>(s: &mut [Sos<F>]) -> Result<()>
+pub(crate) fn sosfilt_zi_checked_slice<F>(s: &mut [Sos<F>]) -> Result<()>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
 {
@@ -51,7 +51,7 @@ where
 ///
 /// Checked `sosfilt_zi` entrypoint used by trait-first kernels.
 ///
-pub fn sosfilt_zi_checked<'a, F, I, S>(s: I) -> Result<()>
+pub(crate) fn sosfilt_zi_checked<'a, F, I>(s: I) -> Result<()>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
     I: IntoIterator<Item = &'a mut Sos<F>>,
@@ -123,7 +123,7 @@ mod tests {
         );
 
         // Compute zi inplace on Sos
-        sosfilt_zi_dyn::<_, _, Sos<f64>>(sos.iter_mut());
+        sosfilt_zi_dyn::<_, _>(sos.iter_mut());
 
         for (i, row) in expected_zi.row_iter().enumerate() {
             let section = sos[i];

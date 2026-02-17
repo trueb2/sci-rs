@@ -21,13 +21,13 @@ use num_traits::{real::Real, MulAdd, Pow, ToPrimitive};
 /// in the stop band.  The Kaiser window parameter to be used in the
 /// window method is computed by ``kaiser_beta(65.)``:
 ///
-/// ```
+/// ```ignore
 /// use sci_rs::signal::filter::design::kaiser_beta;
 /// assert_eq!(6.20426, kaiser_beta(65.));
 /// ```
 /// # See Also
 /// [kaiser_atten], [kaiserord]
-pub fn kaiser_beta<F>(a: F) -> F
+pub(crate) fn kaiser_beta<F>(a: F) -> F
 where
     F: Real + MulAdd<Output = F> + Pow<F, Output = F>,
     <F as Pow<F>>::Output: MulAdd<F, F>,
@@ -74,14 +74,14 @@ where
 /// is sampled at 480 Hz. Expressed as a fraction of the Nyquist frequency,
 /// the width is 9/(0.5*480) = 0.0375. The approximate attenuation (in dB)
 /// is computed as follows:
-/// ```
+/// ```ignore
 /// use sci_rs::signal::filter::design::kaiser_atten;
 /// assert_eq!(64.48099630593983 , kaiser_atten(211, 0.0375));
 /// ```
 ///
 /// # See Also
 /// [kaiserord], [kaiser_beta]
-pub fn kaiser_atten<F>(numtaps: u32, width: F) -> F
+pub(crate) fn kaiser_atten<F>(numtaps: u32, width: F) -> F
 where
     F: Real + MulAdd<Output = F> + RealField,
 {
@@ -214,7 +214,7 @@ where
 /// --------
 /// [kaiser_beta], [kaiser_atten]
 ///
-pub fn kaiserord<F>(ripple: F, width: F) -> (F, F)
+pub(crate) fn kaiserord<F>(ripple: F, width: F) -> (F, F)
 where
     F: Real + MulAdd<Output = F> + Pow<F, Output = F> + RealField,
 {

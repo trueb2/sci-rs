@@ -4,13 +4,13 @@ use nalgebra::Complex;
 use crate::error::Error;
 
 #[cfg(feature = "alloc")]
-pub fn relative_degree_dyn<F>(zeros: &[Complex<F>], poles: &[Complex<F>]) -> usize {
+pub(crate) fn relative_degree_dyn<F>(zeros: &[Complex<F>], poles: &[Complex<F>]) -> usize {
     relative_degree_checked(zeros, poles).expect("invalid relative degree configuration")
 }
 
 /// Checked relative-degree helper returning a deterministic argument error.
 #[cfg(feature = "alloc")]
-pub fn relative_degree_checked<F>(
+pub(crate) fn relative_degree_checked<F>(
     zeros: &[Complex<F>],
     poles: &[Complex<F>],
 ) -> Result<usize, Error> {

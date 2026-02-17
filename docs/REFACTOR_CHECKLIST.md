@@ -87,23 +87,50 @@ Legend:
 
 ## Public Interface Sweep (Complete)
 
-This sweep is complete for the refactor scope; public entrypoints execute through checked trait-first kernels.
+This sweep is complete for the refactor scope: the public signal interface is trait/config/kernel-first.
+Legacy function-style helpers are internal-only (`pub(crate)`) and are not part of the public API contract.
 
-| Module | Public API | trait-first status | Notes |
+| Module | Public trait/config/kernel surface | trait-first status | Notes |
 | --- | --- | --- | --- |
-| `signal/filter` | `lfilter` | complete | kernel-first 1D fast path with contiguous-slice no-copy route |
-| `signal/filter` | `sosfilt_dyn` / `sosfilt_item` / `sosfilt_st` | complete | checked slice wrappers and trait-first kernels available |
-| `signal/filter` | `sosfiltfilt_dyn` | complete | checked slice API + trait-first kernel parity (kernel path avoids iterator re-collect) |
-| `signal/filter` | `savgol_filter_dyn` / `savgol_coeffs_dyn` | complete | checked slice APIs and trait-first kernels (`SavgolFilterKernel`, `SavgolCoeffsKernel`) |
-| `signal/filter` | `lfilter_zi_dyn` / `sosfilt_zi_dyn` | complete | checked wrappers (including `sosfilt_zi_checked_slice`) and design kernels wired |
-| `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | complete | checked helper APIs and axis kernels landed |
-| `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | complete | covered by `IirFilterKernel` plus dedicated zpk helper kernels; checked `iirfilter/butter` entrypoints now available |
-| `signal/wave` | `square`/`sawtooth`/`chirp`/`gausspulse`/`sweep_poly` (ndarray N-D) + `unit_impulse` (1D) | complete | waveform APIs now route through trait-first kernels |
-| `signal/multirate` | `upfirdn` / `resample_poly` / `decimate` | complete | checked trait-first kernels (`UpFirDnKernel`, `ResamplePolyKernel`, `DecimateKernel`) |
-| `signal/peak` | `argrelextrema` / `argrelmax` / `argrelmin` / `find_peaks` / `peak_prominences` / `peak_widths` / `cwt` / `find_peaks_cwt` | complete | trait-first kernels added with constructor and execution contract tests for each capability |
-| `signal/spectral` | `periodogram` / `welch` / `csd` / `coherence` / `stft` / `istft` / `spectrogram` / `freqz` / `sosfreqz` | complete | trait-first kernelized spectral path with config validation and output-shape invariant tests |
-| `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | complete | trait-first stats kernels exist and are parity-tested; entrypoints are checked wrappers |
-| `linalg` | `companion_dyn` | complete | checked kernel-backed construction path added |
+| `signal/convolve` | `Convolve1D` / `ConvolveConfig` / `ConvolveKernel` | complete | kernel-backed checked execution |
+| `signal/convolve` | `Correlate1D` / `CorrelateConfig` / `CorrelateKernel` | complete | kernel-backed checked execution |
+| `signal/resample` | `Resample1D` / `ResampleConfig` / `ResampleKernel` | complete | kernel-backed checked execution |
+| `signal/filter` | `LFilter1D` / `LFilterConfig` / `LFilterKernel` | complete | kernel-backed checked execution |
+| `signal/filter` | `FiltFilt1D` / `FiltFiltConfig` / `FiltFiltKernel` | complete | kernel-backed checked execution |
+| `signal/filter` | `SosFilt1D` / `SosFiltConfig` / `SosFiltKernel` | complete | kernel-backed checked execution |
+| `signal/filter` | `SosFiltFilt1D` / `SosFiltFiltConfig` / `SosFiltFiltKernel` | complete | kernel-backed checked execution |
+| `signal/filter` | `LFilterZiDesign1D` / `LFilterZiConfig` / `LFilterZiKernel` | complete | design kernel path |
+| `signal/filter` | `SosFiltZiDesign1D` / `SosFiltZiConfig` / `SosFiltZiKernel` | complete | design kernel path |
+| `signal/filter` | `SavgolFilter1D` / `SavgolFilterConfig` / `SavgolFilterKernel` | complete | kernel-backed checked execution |
+| `signal/filter` | `SavgolCoeffsDesign` / `SavgolCoeffsConfig` / `SavgolCoeffsKernel` | complete | design kernel path |
+| `signal/filter/design` | `FirWinDesign` / `FirWinConfig` / `FirWinKernel` | complete | constructor validation + kernel execution |
+| `signal/filter/design` | `IirDesign` / `IirFilterConfig` / `IirFilterKernel` | complete | constructor validation + kernel execution |
+| `signal/filter/design` | `IirDesign` / `ButterConfig` / `ButterKernel` | complete | constructor validation + kernel execution |
+| `signal/windows` | `WindowGenerate` / `WindowConfig` / `WindowKernel` | complete | owned builder + kernel execution |
+| `signal/wave` | `SquareWave1D` / `SquareWaveConfig` / `SquareWaveKernel` | complete | kernel-backed waveform generation |
+| `signal/wave` | `SawtoothWave1D` / `SawtoothWaveConfig` / `SawtoothWaveKernel` | complete | kernel-backed waveform generation |
+| `signal/wave` | `ChirpWave1D` / `ChirpConfig` / `ChirpKernel` | complete | kernel-backed waveform generation |
+| `signal/wave` | `GaussPulseWave1D` / `GaussPulseConfig` / `GaussPulseKernel` | complete | kernel-backed waveform generation |
+| `signal/wave` | `SweepPolyWave1D` / `SweepPolyConfig` / `SweepPolyKernel` | complete | kernel-backed waveform generation |
+| `signal/wave` | `UnitImpulse1D` / `UnitImpulseConfig` / `UnitImpulseKernel` | complete | kernel-backed waveform generation |
+| `signal/multirate` | `UpFirDn1D` / `UpFirDnConfig` / `UpFirDnKernel` | complete | checked trait-first kernel |
+| `signal/multirate` | `ResamplePoly1D` / `ResamplePolyConfig` / `ResamplePolyKernel` | complete | checked trait-first kernel |
+| `signal/multirate` | `Decimate1D` / `DecimateConfig` / `DecimateKernel` | complete | checked trait-first kernel |
+| `signal/peak` | `ArgRelExtrema1D` / `ArgRelExtremaConfig` / `ArgRelExtremaKernel` | complete | checked trait-first kernel |
+| `signal/peak` | `FindPeaks1D` / `FindPeaksConfig` / `FindPeaksKernel` | complete | checked trait-first kernel |
+| `signal/peak` | `PeakProminence1D` / `PeakProminencesConfig` / `PeakProminencesKernel` | complete | checked trait-first kernel |
+| `signal/peak` | `PeakWidths1D` / `PeakWidthsConfig` / `PeakWidthsKernel` | complete | checked trait-first kernel |
+| `signal/peak` | `Cwt1D` / `CwtConfig` / `CwtKernel` | complete | checked trait-first kernel |
+| `signal/peak` | `FindPeaksCwt1D` / `FindPeaksCwtConfig` / `FindPeaksCwtKernel` | complete | checked trait-first kernel |
+| `signal/spectral` | `Periodogram1D` / `PeriodogramConfig` / `PeriodogramKernel` | complete | checked trait-first kernel |
+| `signal/spectral` | `WelchPsd1D` / `WelchConfig` / `WelchKernel` | complete | checked trait-first kernel |
+| `signal/spectral` | `Csd1D` / `CsdConfig` / `CsdKernel` | complete | checked trait-first kernel |
+| `signal/spectral` | `Coherence1D` / `CoherenceConfig` / `CoherenceKernel` | complete | checked trait-first kernel |
+| `signal/spectral` | `Stft1D` / `StftConfig` / `StftKernel` | complete | checked trait-first kernel |
+| `signal/spectral` | `Istft1D` / `IstftConfig` / `IstftKernel` | complete | checked trait-first kernel |
+| `signal/spectral` | `Spectrogram1D` / `SpectrogramConfig` / `SpectrogramKernel` | complete | checked trait-first kernel |
+| `signal/spectral` | `Freqz1D` / `FreqzConfig` / `FreqzKernel` | complete | checked trait-first kernel |
+| `signal/spectral` | `SosFreqz1D` / `SosFreqzConfig` / `SosFreqzKernel` | complete | checked trait-first kernel |
 
 ## Acceptance Gate Tracker
 

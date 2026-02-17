@@ -71,7 +71,7 @@ use super::{
 /// >>> plt.grid(True)
 /// ```
 #[cfg(feature = "alloc")]
-pub fn bilinear_zpk_dyn<F>(zpk: ZpkFormatFilter<F>, fs: F) -> ZpkFormatFilter<F>
+pub(crate) fn bilinear_zpk_dyn<F>(zpk: ZpkFormatFilter<F>, fs: F) -> ZpkFormatFilter<F>
 where
     F: RealField + Float,
 {

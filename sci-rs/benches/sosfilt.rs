@@ -1,24 +1,10 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use dasp_signal::{rate, Signal};
+use sci_rs::kernel::KernelLifecycle;
 use sci_rs::signal::filter::design::Sos;
-use sci_rs::signal::filter::{sosfilt_dyn, sosfilt_fast32_st};
+use sci_rs::signal::filter::{SosFiltConfig, SosFiltKernel};
+use sci_rs::signal::traits::SosFilt1D;
 
-// TLDR: 8.5x faster
-// sosfilt_st is as fast as sosfilt_dyn
-
-///
-/// 4th order Butterworth Bandpass Sosfilt 10 seconds of 1666Hz sine wave
-///
-/// Python scipy.signal.sosfilt:
-/// ```
-/// avg over 1000 runs 66,776,329 ns/iter
-/// ```
-///
-/// Rust implementation
-/// ```
-/// sosfilt_100x_dyn        time:   [7.7290 ms 7.7425 ms 7.7572 ms]
-/// ```
-///
 fn butter_sosfilt_100x_dyn(c: &mut Criterion) {
     // 4th order butterworth bandpass 10 to 50 at 1666Hz
     let filter: [f64; 24] = [
@@ -47,7 +33,10 @@ fn butter_sosfilt_100x_dyn(c: &mut Criterion) {
         -1.978497311228862,
         0.9799894886973378,
     ];
-    let mut sos = Sos::from_scipy_dyn(4, filter.to_vec());
+    let mut kernel = SosFiltKernel::try_new(SosFiltConfig {
+        sos: Sos::from_scipy_dyn(4, filter.to_vec()),
+    })
+    .expect("valid sosfilt kernel config");
 
     // A signal with a frequency that we can recover
     let sample_hz = 1666.;
@@ -60,7 +49,11 @@ fn butter_sosfilt_100x_dyn(c: &mut Criterion) {
 
     c.bench_function("sosfilt_100x_dyn", |b| {
         b.iter(|| {
-            black_box(sosfilt_dyn(sin_wave.iter(), &mut sos));
+            black_box(
+                kernel
+                    .run_alloc(sin_wave.as_slice())
+                    .expect("benchmark input should satisfy sosfilt preconditions"),
+            );
         });
     });
 }
@@ -93,7 +86,10 @@ fn butter_sosfilt_f64(c: &mut Criterion) {
         -1.978497311228862,
         0.9799894886973378,
     ];
-    let mut sos = Sos::from_scipy_dyn(4, filter.to_vec());
+    let mut kernel = SosFiltKernel::try_new(SosFiltConfig {
+        sos: Sos::from_scipy_dyn(4, filter.to_vec()),
+    })
+    .expect("valid sosfilt kernel config");
 
     // A signal with a frequency that we can recover
     let sample_hz = 1666.;
@@ -105,7 +101,11 @@ fn butter_sosfilt_f64(c: &mut Criterion) {
 
     c.bench_function("sosfilt_f64", |b| {
         b.iter(|| {
-            black_box(sosfilt_dyn(sin_wave.iter(), &mut sos));
+            black_box(
+                kernel
+                    .run_alloc(sin_wave.as_slice())
+                    .expect("benchmark input should satisfy sosfilt preconditions"),
+            );
         });
     });
 }
@@ -138,7 +138,10 @@ fn butter_sosfilt_f32(c: &mut Criterion) {
         -1.978_497_3,
         0.979_989_47,
     ];
-    let mut sos = Sos::from_scipy_dyn(4, filter.to_vec());
+    let mut kernel = SosFiltKernel::try_new(SosFiltConfig {
+        sos: Sos::from_scipy_dyn(4, filter.to_vec()),
+    })
+    .expect("valid sosfilt kernel config");
 
     // A signal with a frequency that we can recover
     let sample_hz = 1666.;
@@ -150,22 +153,16 @@ fn butter_sosfilt_f32(c: &mut Criterion) {
 
     c.bench_function("sosfilt_f32", |b| {
         b.iter(|| {
-            black_box(sosfilt_dyn(sin_wave.iter(), &mut sos));
+            black_box(
+                kernel
+                    .run_alloc(sin_wave.as_slice())
+                    .expect("benchmark input should satisfy sosfilt preconditions"),
+            );
         });
     });
 }
 
-///
-/// 4th order Butterworth Bandpass Sosfilt 10 seconds of 1666Hz sine wave
-/// 2x faster than sosfilt_dyn due to tiling and cpu pipelining
-///
-/// ```
-/// sosfilt_f32             time:   [139.61 µs 139.86 µs 140.16 µs]
-/// sosfilt_fast32_st4       time:   [78.412 µs 79.758 µs 81.399 µs]
-/// ```
-///
-///
-fn butter_sosfilt_fast32_st4(c: &mut Criterion) {
+fn butter_sosfilt_f32_order4_trait(c: &mut Criterion) {
     // 4th order butterworth bandpass 10 to 50 at 1666Hz
     let filter: [f32; 24] = [
         2.677_576_738_259_783_5e-5,
@@ -193,7 +190,10 @@ fn butter_sosfilt_fast32_st4(c: &mut Criterion) {
         -1.978497311228862,
         0.9799894886973378,
     ];
-    let mut sos = Sos::from_scipy_dyn(4, filter.to_vec());
+    let mut kernel = SosFiltKernel::try_new(SosFiltConfig {
+        sos: Sos::from_scipy_dyn(4, filter.to_vec()),
+    })
+    .expect("valid sosfilt kernel config");
 
     // A signal with a frequency that we can recover
     let sample_hz = 1666.;
@@ -202,33 +202,20 @@ fn butter_sosfilt_fast32_st4(c: &mut Criterion) {
     let sin_wave: Vec<f32> = (0..seconds * sample_hz as usize)
         .map(|_| signal.next() as f32)
         .collect::<Vec<_>>();
-    let mut buf = vec![0.0; sin_wave.len()];
 
-    c.bench_function("sosfilt_fast32_st4", |b| {
+    c.bench_function("sosfilt_f32_order4_trait", |b| {
         b.iter(|| {
-            black_box(sosfilt_fast32_st(&sin_wave, &mut sos, &mut buf));
+            black_box(
+                kernel
+                    .run_alloc(sin_wave.as_slice())
+                    .expect("benchmark input should satisfy sosfilt preconditions"),
+            );
         });
     });
 }
 
-///
-/// 4th vs 8th order Butterworth Bandpass Sosfilt 10 seconds of 1666Hz sine wave
-/// 2x faster due to tiling and cpu pipelining
-///
-/// ```
-/// // with tiling specialization
-/// sosfilt_fast32_st4       time:   [78.412 µs 79.758 µs 81.399 µs]
-/// sosfilt_fast32_st8       time:   [133.39 µs 133.73 µs 134.08 µs]
-///
-/// // without tiling specialization
-/// sosfilt_fast32_st8      time:   [536.05 µs 537.17 µs 538.31 µs]
-///    change: [+300.64% +301.99% +303.35%] (p = 0.00 < 0.05)
-///    Performance has regressed.
-/// ```
-///
-///
-fn butter_sosfilt_fast32_st8(c: &mut Criterion) {
-    // 8th order butterworth bandpass 10 to 50 at 1666HzA
+fn butter_sosfilt_f32_order8_trait(c: &mut Criterion) {
+    // 8th order butterworth bandpass 10 to 50 at 1666Hz
     let filter: [f32; 48] = [
         7.223657016655901e-10,
         1.4447314033311803e-09,
@@ -279,7 +266,10 @@ fn butter_sosfilt_fast32_st8(c: &mut Criterion) {
         -1.9886761584321624,
         0.9901117398066808,
     ];
-    let mut sos = Sos::from_scipy_dyn(8, filter.to_vec());
+    let mut kernel = SosFiltKernel::try_new(SosFiltConfig {
+        sos: Sos::from_scipy_dyn(8, filter.to_vec()),
+    })
+    .expect("valid sosfilt kernel config");
 
     // A signal with a frequency that we can recover
     let sample_hz = 1666.;
@@ -288,11 +278,14 @@ fn butter_sosfilt_fast32_st8(c: &mut Criterion) {
     let sin_wave: Vec<f32> = (0..seconds * sample_hz as usize)
         .map(|_| signal.next() as f32)
         .collect::<Vec<_>>();
-    let mut buf = vec![0.0; sin_wave.len()];
 
-    c.bench_function("sosfilt_fast32_st8", |b| {
+    c.bench_function("sosfilt_f32_order8_trait", |b| {
         b.iter(|| {
-            black_box(sosfilt_fast32_st(&sin_wave, &mut sos, &mut buf));
+            black_box(
+                kernel
+                    .run_alloc(sin_wave.as_slice())
+                    .expect("benchmark input should satisfy sosfilt preconditions"),
+            );
         });
     });
 }
@@ -302,7 +295,7 @@ criterion_group!(
     butter_sosfilt_100x_dyn,
     butter_sosfilt_f64,
     butter_sosfilt_f32,
-    butter_sosfilt_fast32_st4,
-    butter_sosfilt_fast32_st8,
+    butter_sosfilt_f32_order4_trait,
+    butter_sosfilt_f32_order8_trait,
 );
 criterion_main!(benches);

@@ -887,7 +887,7 @@ mod tests {
 
         let actual = kernel.run_alloc().expect("run_alloc");
         let mut expected = sos;
-        sosfilt_zi_checked::<f64, _, Sos<f64>>(expected.iter_mut()).expect("reference sosfilt_zi");
+        sosfilt_zi_checked::<f64, _>(expected.iter_mut()).expect("reference sosfilt_zi");
         assert_eq!(actual.len(), expected.len());
         actual.iter().zip(expected.iter()).for_each(|(a, e)| {
             assert_eq!(a.b, e.b);
