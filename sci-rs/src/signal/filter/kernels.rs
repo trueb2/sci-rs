@@ -143,7 +143,7 @@ where
                 got: out_slice.len(),
             });
         }
-        let y = super::sosfiltfilt_dyn(input.iter(), &self.sos).map_err(|_| {
+        let y = super::sosfiltfilt_checked(input, &self.sos).map_err(|_| {
             ExecInvariantViolation::InvalidState {
                 reason: "sosfiltfilt kernel execution failed",
             }
@@ -157,7 +157,7 @@ where
         I: Read1D<F> + ?Sized,
     {
         let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
-        super::sosfiltfilt_dyn(input.iter(), &self.sos).map_err(|_| {
+        super::sosfiltfilt_checked(input, &self.sos).map_err(|_| {
             ExecInvariantViolation::InvalidState {
                 reason: "sosfiltfilt kernel execution failed",
             }

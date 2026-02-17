@@ -15,18 +15,15 @@ use alloc::vec::Vec;
 ///
 ///
 #[inline]
-pub fn sosfiltfilt_dyn<YI, F>(y: YI, sos: &[Sos<F>]) -> Result<Vec<F>>
+pub fn sosfiltfilt_checked<F>(y: &[F], sos: &[Sos<F>]) -> Result<Vec<F>>
 where
     F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
-    YI: Iterator,
-    YI::Item: Borrow<F>,
 {
     let n = sos.len();
     let ntaps = 2 * n + 1;
     let bzeros = sos.iter().filter(|s| s.b[2] == F::zero()).count();
     let azeros = sos.iter().filter(|s| s.a[2] == F::zero()).count();
     let ntaps = ntaps - min(bzeros, azeros);
-    let y = y.map(|yi| *yi.borrow()).collect::<Vec<F>>();
     if y.is_empty() {
         return Err(Error::InvalidArg {
             arg: "y".into(),
@@ -34,7 +31,7 @@ where
         });
     }
     let y_len = y.len();
-    let x = DVector::<F>::from_vec(y);
+    let x = DVector::<F>::from_column_slice(y);
     let (edge, ext) = pad(Pad::Odd, None, x, 0, ntaps)?;
 
     let mut init_sos = sos.to_vec();
@@ -64,6 +61,20 @@ where
         .collect::<Vec<_>>();
     z.reverse();
     Ok(z)
+}
+
+///
+/// A forward-backward digital filter using cascaded second-order sections.
+///
+#[inline]
+pub fn sosfiltfilt_dyn<YI, F>(y: YI, sos: &[Sos<F>]) -> Result<Vec<F>>
+where
+    F: RealField + Copy + PartialEq + Scalar + Zero + One + Sum + SubAssign,
+    YI: Iterator,
+    YI::Item: Borrow<F>,
+{
+    let y = y.map(|yi| *yi.borrow()).collect::<Vec<F>>();
+    sosfiltfilt_checked(&y, sos)
 }
 
 #[cfg(test)]
