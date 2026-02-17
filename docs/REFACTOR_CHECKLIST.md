@@ -81,6 +81,9 @@ This sweep is complete for the refactor scope; remaining legacy entrypoints are 
 | `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | complete | checked helper APIs and axis kernels landed |
 | `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | complete | covered by `IirFilterKernel` plus dedicated zpk helper kernels; checked `iirfilter/butter` entrypoints now available |
 | `signal/wave` | `square`/`sawtooth`/`chirp`/`gausspulse`/`sweep_poly` (ndarray N-D) + `unit_impulse` (1D) | complete | waveform APIs now route through trait-first kernels |
+| `signal/multirate` | `upfirdn` / `resample_poly` / `decimate` | complete | multirate compatibility shims implemented with deterministic kernel-style behavior |
+| `signal/peak` | `argrelextrema` / `argrelmax` / `argrelmin` / `find_peaks` / `peak_prominences` / `peak_widths` / `cwt` / `find_peaks_cwt` | complete | peak-finding and wavelet helpers implemented and tested |
+| `signal/spectral` | `periodogram` / `welch` / `csd` / `coherence` / `stft` / `istft` / `spectrogram` / `freqz` / `sosfreqz` | complete | FFT-backed spectral compatibility surface implemented and tested |
 | `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | complete | trait-first stats kernels exist and are parity-tested; free functions are compatibility shims |
 | `linalg` | `companion_dyn` | complete | checked kernel-backed construction path added |
 
@@ -96,11 +99,10 @@ This sweep is complete for the refactor scope; remaining legacy entrypoints are 
 
 ## Next Interfaces In Flight
 
-1. `upfirdn`
-2. `resample_poly`
+1. none (`Signal-First Priority Queue` 20/20 implemented)
 
 ## Source Recheck Audit (2026-02-17)
 
-- Traversed source inventory: `68/68` files tracked across `sci-rs/src`, `sci-rs-core/src`, and `sci-rs-test/src`.
+- Traversed source inventory: `71/71` files tracked across `sci-rs/src`, `sci-rs-core/src`, and `sci-rs-test/src`.
 - Traversal parity check: `0` untracked files and `0` stale entries in `docs/SOURCE_TRAVERSAL.md`.
 - Validation rerun after latest checked-path changes: `fmt`, `clippy -D warnings`, tests (`all-features`, `no-default-features`, `no-default-features --features alloc`), and `bench --no-run` all pass.

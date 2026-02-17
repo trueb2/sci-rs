@@ -33,3 +33,15 @@ pub mod windows;
 /// function from `scipy.signal`.
 #[cfg(feature = "std")]
 pub mod resample;
+
+/// Multirate signal processing (`upfirdn`, `resample_poly`, `decimate`).
+#[cfg(feature = "alloc")]
+pub mod multirate;
+
+/// Peak-finding and wavelet helpers (`find_peaks`, `cwt`, ...).
+#[cfg(feature = "alloc")]
+pub mod peak;
+
+/// Spectral analysis functions (`periodogram`, `welch`, `stft`, `freqz`, ...).
+#[cfg(feature = "std")]
+pub mod spectral;
