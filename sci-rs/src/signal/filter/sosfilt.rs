@@ -174,11 +174,9 @@ where
 ///
 /// Checked SOS filtering entrypoint.
 ///
-pub fn sosfilt_checked<YI, F>(y: YI, sos: &mut [Sos<F>]) -> Result<Vec<F>>
+pub fn sosfilt_checked_slice<F>(y: &[F], sos: &mut [Sos<F>]) -> Result<Vec<F>>
 where
     F: RealField + Copy,
-    YI: IntoIterator,
-    YI::Item: Borrow<F>,
 {
     if sos.is_empty() {
         return Err(Error::InvalidArg {
@@ -186,7 +184,20 @@ where
             reason: "sos must be non-empty.".into(),
         });
     }
-    Ok(sosfilt_dyn(y, sos))
+    Ok(sosfilt_dyn(y.iter(), sos))
+}
+
+///
+/// Checked SOS filtering entrypoint.
+///
+pub fn sosfilt_checked<YI, F>(y: YI, sos: &mut [Sos<F>]) -> Result<Vec<F>>
+where
+    F: RealField + Copy,
+    YI: IntoIterator,
+    YI::Item: Borrow<F>,
+{
+    let y = y.into_iter().map(|yi| *yi.borrow()).collect::<Vec<_>>();
+    sosfilt_checked_slice(&y, sos)
 }
 
 ///

@@ -30,7 +30,7 @@ pub fn savgol_filter_dyn<YI, F>(
 ) -> Vec<F>
 where
     F: RealField + Copy + Sum,
-    YI: Iterator,
+    YI: IntoIterator,
     YI::Item: Borrow<F>,
 {
     savgol_filter_checked(y, window_length, polyorder, deriv, delta)
@@ -41,8 +41,8 @@ where
 /// Checked Savitzky-Golay filtering entrypoint.
 ///
 /// This is the refactor-safe path used by trait-first kernels.
-pub fn savgol_filter_checked<YI, F>(
-    y: YI,
+pub fn savgol_filter_checked_slice<F>(
+    y: &[F],
     window_length: usize,
     polyorder: usize,
     deriv: Option<usize>,
@@ -50,8 +50,6 @@ pub fn savgol_filter_checked<YI, F>(
 ) -> Result<Vec<F>>
 where
     F: RealField + Copy + Sum,
-    YI: Iterator,
-    YI::Item: Borrow<F>,
 {
     if window_length == 0 || window_length.is_multiple_of(2) {
         return Err(Error::InvalidArg {
@@ -67,29 +65,48 @@ where
         });
     }
 
+    if y.is_empty() {
+        return Ok(vec![]);
+    }
+
     let mut fir = savgol_coeffs_checked::<F>(window_length, polyorder, deriv, delta)?;
     fir.reverse();
 
-    // Pad with nearest edge value
-    let size_hint = y.size_hint();
-    let mut data = Vec::with_capacity(size_hint.1.unwrap_or(size_hint.0));
-    let mut y = y;
-    let Some(nearest) = y.next() else {
-        return Ok(vec![]);
-    };
-    let nearest = *nearest.borrow();
-    data.extend((0..(window_length / 2 + 1)).map(|_| nearest));
-    data.extend(y.map(|yi| *yi.borrow()));
-    let nearest = *data.last().unwrap_or(&nearest);
-    data.extend((0..window_length / 2).map(|_| nearest));
+    let left = window_length / 2;
+    let right = window_length / 2;
+    let first = y[0];
+    let last = *y.last().unwrap_or(&first);
+    let mut data = Vec::with_capacity(y.len() + left + right);
+    data.extend((0..left).map(|_| first));
+    data.extend(y.iter().copied());
+    data.extend((0..right).map(|_| last));
 
-    // Convolve the data with the FIR coefficients
     let rslt = data
         .windows(window_length)
         .map(|w| w.iter().zip(fir.iter()).map(|(a, b)| *a * *b).sum::<F>())
         .collect();
 
     Ok(rslt)
+}
+
+///
+/// Checked Savitzky-Golay filtering entrypoint.
+///
+/// This is the refactor-safe path used by trait-first kernels.
+pub fn savgol_filter_checked<YI, F>(
+    y: YI,
+    window_length: usize,
+    polyorder: usize,
+    deriv: Option<usize>,
+    delta: Option<F>,
+) -> Result<Vec<F>>
+where
+    F: RealField + Copy + Sum,
+    YI: IntoIterator,
+    YI::Item: Borrow<F>,
+{
+    let data = y.into_iter().map(|yi| *yi.borrow()).collect::<Vec<_>>();
+    savgol_filter_checked_slice(&data, window_length, polyorder, deriv, delta)
 }
 
 ///

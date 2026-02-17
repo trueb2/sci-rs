@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use core::iter::Sum;
 use core::ops::{Add, Sub, SubAssign};
 use nalgebra::{RealField, Scalar};
-use ndarray::{Array1, ArrayView1};
+use ndarray::ArrayView1;
 use num_traits::{FromPrimitive, NumAssign, One, Zero};
 
 use super::design::Sos;
@@ -68,7 +68,7 @@ where
                 got: out_slice.len(),
             });
         }
-        let y = super::sosfilt_checked(input.iter(), &mut self.sos).map_err(|_| {
+        let y = super::sosfilt_checked_slice(input, &mut self.sos).map_err(|_| {
             ExecInvariantViolation::InvalidState {
                 reason: "sosfilt kernel execution failed",
             }
@@ -82,7 +82,7 @@ where
         I: Read1D<F> + ?Sized,
     {
         let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
-        super::sosfilt_checked(input.iter(), &mut self.sos).map_err(|_| {
+        super::sosfilt_checked_slice(input, &mut self.sos).map_err(|_| {
             ExecInvariantViolation::InvalidState {
                 reason: "sosfilt kernel execution failed",
             }
@@ -234,18 +234,13 @@ where
         I: Read1D<T> + ?Sized,
     {
         let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
-        let b = Array1::from_vec(self.b.clone());
-        let a = Array1::from_vec(self.a.clone());
-        let x = Array1::from_vec(input.to_vec());
-        let (y, _) = Array1::lfilter(
-            ArrayView1::from(b.as_slice().unwrap_or_default()),
-            ArrayView1::from(a.as_slice().unwrap_or_default()),
-            x,
-            self.axis,
-            None,
-        )
-        .map_err(|_| ExecInvariantViolation::InvalidState {
-            reason: "lfilter kernel execution failed",
+        let b = ArrayView1::from(self.b.as_slice());
+        let a = ArrayView1::from(self.a.as_slice());
+        let x = ArrayView1::from(input);
+        let (y, _) = ArrayView1::lfilter(b, a, x, self.axis, None).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "lfilter kernel execution failed",
+            }
         })?;
         Ok(y.to_vec())
     }
@@ -324,18 +319,13 @@ where
         I: Read1D<T> + ?Sized,
     {
         let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
-        let b = Array1::from_vec(self.b.clone());
-        let a = Array1::from_vec(self.a.clone());
-        let x = Array1::from_vec(input.to_vec());
-        let y = Array1::filtfilt(
-            ArrayView1::from(b.as_slice().unwrap_or_default()),
-            ArrayView1::from(a.as_slice().unwrap_or_default()),
-            x,
-            self.axis,
-            self.padding,
-        )
-        .map_err(|_| ExecInvariantViolation::InvalidState {
-            reason: "filtfilt kernel execution failed",
+        let b = ArrayView1::from(self.b.as_slice());
+        let a = ArrayView1::from(self.a.as_slice());
+        let x = ArrayView1::from(input);
+        let y = ArrayView1::filtfilt(b, a, x, self.axis, self.padding).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "filtfilt kernel execution failed",
+            }
         })?;
         Ok(y.to_vec())
     }
@@ -427,8 +417,8 @@ where
         I: Read1D<T> + ?Sized,
     {
         let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
-        savgol_filter_checked(
-            input.iter(),
+        super::savgol_filter_checked_slice(
+            input,
             self.window_length,
             self.polyorder,
             self.deriv,
@@ -635,7 +625,7 @@ where
 {
     fn run_alloc(&self) -> Result<Vec<Sos<T>>, ExecInvariantViolation> {
         let mut sos = self.sos.clone();
-        super::sosfilt_zi_checked::<T, _, Sos<T>>(sos.iter_mut()).map_err(|_| {
+        super::sosfilt_zi_checked_slice(sos.as_mut_slice()).map_err(|_| {
             ExecInvariantViolation::InvalidState {
                 reason: "sosfilt_zi kernel execution failed",
             }

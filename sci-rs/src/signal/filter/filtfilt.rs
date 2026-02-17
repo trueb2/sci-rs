@@ -204,6 +204,40 @@ where
 ///
 /// Kernel-backed 1D compatibility wrapper for filtfilt.
 ///
+pub fn filtfilt_checked<T>(
+    b: &[T],
+    a: &[T],
+    x: &[T],
+    padding: Option<FiltFiltPad>,
+) -> Result<Vec<T>>
+where
+    T: Clone
+        + Add<T, Output = T>
+        + Sub<T, Output = T>
+        + num_traits::One
+        + nalgebra::RealField
+        + Copy
+        + core::iter::Sum,
+{
+    let kernel = super::FiltFiltKernel::try_new(super::FiltFiltConfig {
+        b: b.to_vec(),
+        a: a.to_vec(),
+        axis: Some(0),
+        padding,
+    })
+    .map_err(|_| Error::InvalidArg {
+        arg: "b/a".into(),
+        reason: "Could not initialize filtfilt kernel.".into(),
+    })?;
+    kernel.run_alloc(x).map_err(|_| Error::InvalidArg {
+        arg: "x".into(),
+        reason: "filtfilt kernel execution failed.".into(),
+    })
+}
+
+///
+/// Kernel-backed 1D compatibility wrapper for filtfilt.
+///
 pub fn filtfilt_dyn<T, YI>(b: &[T], a: &[T], y: YI, padding: Option<FiltFiltPad>) -> Result<Vec<T>>
 where
     T: Clone
@@ -216,21 +250,8 @@ where
     YI: IntoIterator,
     YI::Item: Borrow<T>,
 {
-    let kernel = super::FiltFiltKernel::try_new(super::FiltFiltConfig {
-        b: b.to_vec(),
-        a: a.to_vec(),
-        axis: Some(0),
-        padding,
-    })
-    .map_err(|_| Error::InvalidArg {
-        arg: "b/a".into(),
-        reason: "Could not initialize filtfilt kernel.".into(),
-    })?;
     let input = y.into_iter().map(|yi| *yi.borrow()).collect::<Vec<_>>();
-    kernel.run_alloc(&input).map_err(|_| Error::InvalidArg {
-        arg: "x".into(),
-        reason: "filtfilt kernel execution failed.".into(),
-    })
+    filtfilt_checked(b, a, &input, padding)
 }
 
 /// Implement filtfilt for fixed dimension of input array `x`.

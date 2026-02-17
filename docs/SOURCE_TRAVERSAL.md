@@ -66,13 +66,13 @@ Status legend:
 | --- | --- | --- |
 | `sci-rs/src/signal/filter/mod.rs` | partial | mixed exports |
 | `sci-rs/src/signal/filter/kernels.rs` | refactored | main filtering kernels and zi/savgol kernels |
-| `sci-rs/src/signal/filter/lfilter.rs` | partial | free-function shim has kernel-first 1D fast path |
-| `sci-rs/src/signal/filter/filtfilt.rs` | partial | added kernel-backed `filtfilt_dyn` compatibility wrapper |
-| `sci-rs/src/signal/filter/sosfilt.rs` | partial | checked wrappers (`sosfilt_checked`, `sosfilt_item_checked`) |
-| `sci-rs/src/signal/filter/sosfiltfilt.rs` | partial | legacy free function still primary |
+| `sci-rs/src/signal/filter/lfilter.rs` | partial | free-function shim has kernel-first 1D fast path with contiguous-slice no-copy route |
+| `sci-rs/src/signal/filter/filtfilt.rs` | partial | checked slice wrapper (`filtfilt_checked`) and kernel-backed `filtfilt_dyn` compatibility path |
+| `sci-rs/src/signal/filter/sosfilt.rs` | partial | checked slice wrapper (`sosfilt_checked_slice`) + checked single-sample wrapper |
+| `sci-rs/src/signal/filter/sosfiltfilt.rs` | partial | checked slice wrapper (`sosfiltfilt_checked`) now routes through checked slice SOS execution path |
 | `sci-rs/src/signal/filter/lfilter_zi.rs` | partial | checked wrapper (`lfilter_zi_checked`) + kernel path |
-| `sci-rs/src/signal/filter/sosfilt_zi.rs` | partial | checked wrapper (`sosfilt_zi_checked`) + kernel path |
-| `sci-rs/src/signal/filter/savgol_filter.rs` | partial | checked wrappers + trait kernels for filter/coeff design |
+| `sci-rs/src/signal/filter/sosfilt_zi.rs` | partial | checked slice wrapper (`sosfilt_zi_checked_slice`) + checked iterator wrapper + kernel path |
+| `sci-rs/src/signal/filter/savgol_filter.rs` | partial | checked slice wrapper (`savgol_filter_checked_slice`) + iterator adapter + trait kernels for filter/coeff design |
 | `sci-rs/src/signal/filter/ext.rs` | partial | moved to checked `Result` API for pad/odd extension; no trait kernel yet |
 | `sci-rs/src/signal/filter/arraytools.rs` | partial | checked `AxisSliceKernel`/`AxisReverseKernel` landed; legacy helpers retained |
 

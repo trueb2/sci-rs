@@ -91,11 +91,11 @@ This sweep is complete for the refactor scope; remaining legacy entrypoints are 
 
 | Module | Public API | trait-first status | Notes |
 | --- | --- | --- | --- |
-| `signal/filter` | `lfilter` | complete | compatibility shim now includes kernel-first 1D fast path |
-| `signal/filter` | `sosfilt_dyn` / `sosfilt_item` / `sosfilt_st` | complete | checked wrappers and trait-first kernels available |
-| `signal/filter` | `sosfiltfilt_dyn` | complete | checked API + trait-first kernel parity |
-| `signal/filter` | `savgol_filter_dyn` / `savgol_coeffs_dyn` | complete | checked APIs and trait-first kernels (`SavgolFilterKernel`, `SavgolCoeffsKernel`) |
-| `signal/filter` | `lfilter_zi_dyn` / `sosfilt_zi_dyn` | complete | checked wrappers and design kernels wired |
+| `signal/filter` | `lfilter` | complete | compatibility shim includes kernel-first 1D fast path with contiguous-slice no-copy route |
+| `signal/filter` | `sosfilt_dyn` / `sosfilt_item` / `sosfilt_st` | complete | checked slice wrappers and trait-first kernels available |
+| `signal/filter` | `sosfiltfilt_dyn` | complete | checked slice API + trait-first kernel parity (kernel path avoids iterator re-collect) |
+| `signal/filter` | `savgol_filter_dyn` / `savgol_coeffs_dyn` | complete | checked slice APIs and trait-first kernels (`SavgolFilterKernel`, `SavgolCoeffsKernel`) |
+| `signal/filter` | `lfilter_zi_dyn` / `sosfilt_zi_dyn` | complete | checked wrappers (including `sosfilt_zi_checked_slice`) and design kernels wired |
 | `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | complete | checked helper APIs and axis kernels landed |
 | `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | complete | covered by `IirFilterKernel` plus dedicated zpk helper kernels; checked `iirfilter/butter` entrypoints now available |
 | `signal/wave` | `square`/`sawtooth`/`chirp`/`gausspulse`/`sweep_poly` (ndarray N-D) + `unit_impulse` (1D) | complete | waveform APIs now route through trait-first kernels |

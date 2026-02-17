@@ -446,8 +446,13 @@ where
             arg: "b/a".into(),
             reason: "Could not initialize lfilter kernel.".into(),
         })?;
-        let input = x.iter().copied().collect::<Vec<_>>();
-        let output = kernel.run_alloc(&input).map_err(|_| Error::InvalidArg {
+        let output = if let Some(input) = x.as_slice_memory_order() {
+            kernel.run_alloc(input)
+        } else {
+            let input = x.iter().copied().collect::<Vec<_>>();
+            kernel.run_alloc(&input)
+        }
+        .map_err(|_| Error::InvalidArg {
             arg: "x".into(),
             reason: "lfilter kernel execution failed.".into(),
         })?;
