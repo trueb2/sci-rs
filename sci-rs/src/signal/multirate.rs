@@ -1,9 +1,11 @@
 //! Multirate helpers analogous to `scipy.signal` multirate APIs.
 
+use crate::kernel::{ConfigError, ExecInvariantViolation, KernelLifecycle, Read1D, Write1D};
+use crate::signal::traits::{Decimate1D, ResamplePoly1D, UpFirDn1D};
+use num_traits::{Float, FromPrimitive};
+
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-
-use num_traits::{Float, FromPrimitive};
 
 fn convolve_full<F>(x: &[F], h: &[F]) -> Vec<F>
 where
@@ -21,8 +23,7 @@ where
     out
 }
 
-/// Upsample by `up`, apply FIR `h`, and downsample by `down`.
-pub fn upfirdn<F>(h: &[F], x: &[F], up: usize, down: usize) -> Vec<F>
+fn upfirdn_impl<F>(h: &[F], x: &[F], up: usize, down: usize) -> Vec<F>
 where
     F: Float + Copy,
 {
@@ -39,11 +40,7 @@ where
     filtered.into_iter().step_by(down).collect()
 }
 
-/// Polyphase-like resampling using linear interpolation.
-///
-/// This implementation targets deterministic embedded-friendly behavior and
-/// supports the common `up/down` ratio contract from SciPy's `resample_poly`.
-pub fn resample_poly<F>(x: &[F], up: usize, down: usize) -> Vec<F>
+fn resample_poly_impl<F>(x: &[F], up: usize, down: usize) -> Vec<F>
 where
     F: Float + Copy + FromPrimitive,
 {
@@ -74,20 +71,384 @@ where
     out
 }
 
-/// Decimate by integer factor `q`.
-pub fn decimate<F>(x: &[F], q: usize) -> Vec<F>
+fn decimate_impl<F>(x: &[F], q: usize) -> Vec<F>
 where
     F: Float + Copy + FromPrimitive,
 {
     if q == 0 {
         return Vec::new();
     }
-    resample_poly(x, 1, q)
+    resample_poly_impl(x, 1, q)
+}
+
+/// Constructor config for [`UpFirDnKernel`].
+#[derive(Debug, Clone)]
+pub struct UpFirDnConfig<F>
+where
+    F: Float + Copy,
+{
+    /// FIR coefficients.
+    pub h: Vec<F>,
+    /// Integer upsampling factor.
+    pub up: usize,
+    /// Integer downsampling factor.
+    pub down: usize,
+}
+
+/// Trait-first `upfirdn` kernel.
+#[derive(Debug, Clone)]
+pub struct UpFirDnKernel<F>
+where
+    F: Float + Copy,
+{
+    h: Vec<F>,
+    up: usize,
+    down: usize,
+}
+
+impl<F> UpFirDnKernel<F>
+where
+    F: Float + Copy,
+{
+    /// Return configured upsampling factor.
+    pub fn up(&self) -> usize {
+        self.up
+    }
+
+    /// Return configured downsampling factor.
+    pub fn down(&self) -> usize {
+        self.down
+    }
+
+    /// Return expected output length for a given input length.
+    pub fn expected_len(&self, input_len: usize) -> usize {
+        if input_len == 0 {
+            0
+        } else {
+            (input_len * self.up + self.h.len() - 1).div_ceil(self.down)
+        }
+    }
+}
+
+impl<F> KernelLifecycle for UpFirDnKernel<F>
+where
+    F: Float + Copy,
+{
+    type Config = UpFirDnConfig<F>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.h.is_empty() {
+            return Err(ConfigError::EmptyInput { arg: "h" });
+        }
+        if config.up == 0 {
+            return Err(ConfigError::InvalidArgument {
+                arg: "up",
+                reason: "up must be > 0",
+            });
+        }
+        if config.down == 0 {
+            return Err(ConfigError::InvalidArgument {
+                arg: "down",
+                reason: "down must be > 0",
+            });
+        }
+        Ok(Self {
+            h: config.h,
+            up: config.up,
+            down: config.down,
+        })
+    }
+}
+
+impl<F> UpFirDn1D<F> for UpFirDnKernel<F>
+where
+    F: Float + Copy,
+{
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        O: Write1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "upfirdn input must be non-empty",
+            });
+        }
+
+        let expected = self.expected_len(input.len());
+        let out_slice = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out_slice.len() != expected {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected,
+                got: out_slice.len(),
+            });
+        }
+
+        let y = upfirdn_impl(&self.h, input, self.up, self.down);
+        out_slice.copy_from_slice(&y);
+        Ok(())
+    }
+
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<F>, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "upfirdn input must be non-empty",
+            });
+        }
+        Ok(upfirdn_impl(&self.h, input, self.up, self.down))
+    }
+}
+
+/// Constructor config for [`ResamplePolyKernel`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResamplePolyConfig {
+    /// Integer upsampling factor.
+    pub up: usize,
+    /// Integer downsampling factor.
+    pub down: usize,
+}
+
+/// Trait-first `resample_poly` kernel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResamplePolyKernel {
+    up: usize,
+    down: usize,
+}
+
+impl ResamplePolyKernel {
+    /// Return configured upsampling factor.
+    pub fn up(&self) -> usize {
+        self.up
+    }
+
+    /// Return configured downsampling factor.
+    pub fn down(&self) -> usize {
+        self.down
+    }
+
+    /// Return expected output length for a given input length.
+    pub fn expected_len(&self, input_len: usize) -> usize {
+        if input_len == 0 {
+            0
+        } else {
+            (input_len * self.up).div_ceil(self.down)
+        }
+    }
+}
+
+impl KernelLifecycle for ResamplePolyKernel {
+    type Config = ResamplePolyConfig;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.up == 0 {
+            return Err(ConfigError::InvalidArgument {
+                arg: "up",
+                reason: "up must be > 0",
+            });
+        }
+        if config.down == 0 {
+            return Err(ConfigError::InvalidArgument {
+                arg: "down",
+                reason: "down must be > 0",
+            });
+        }
+        Ok(Self {
+            up: config.up,
+            down: config.down,
+        })
+    }
+}
+
+impl<F> ResamplePoly1D<F> for ResamplePolyKernel
+where
+    F: Float + Copy + FromPrimitive,
+{
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        O: Write1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "resample_poly input must be non-empty",
+            });
+        }
+        let expected = self.expected_len(input.len());
+        let out_slice = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out_slice.len() != expected {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected,
+                got: out_slice.len(),
+            });
+        }
+
+        let y = resample_poly_impl(input, self.up, self.down);
+        out_slice.copy_from_slice(&y);
+        Ok(())
+    }
+
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<F>, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "resample_poly input must be non-empty",
+            });
+        }
+        Ok(resample_poly_impl(input, self.up, self.down))
+    }
+}
+
+/// Constructor config for [`DecimateKernel`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecimateConfig {
+    /// Integer decimation factor.
+    pub q: usize,
+}
+
+/// Trait-first `decimate` kernel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecimateKernel {
+    q: usize,
+}
+
+impl DecimateKernel {
+    /// Return configured decimation factor.
+    pub fn q(&self) -> usize {
+        self.q
+    }
+
+    /// Return expected output length for a given input length.
+    pub fn expected_len(&self, input_len: usize) -> usize {
+        if input_len == 0 {
+            0
+        } else {
+            input_len.div_ceil(self.q)
+        }
+    }
+}
+
+impl KernelLifecycle for DecimateKernel {
+    type Config = DecimateConfig;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.q == 0 {
+            return Err(ConfigError::InvalidArgument {
+                arg: "q",
+                reason: "q must be > 0",
+            });
+        }
+        Ok(Self { q: config.q })
+    }
+}
+
+impl<F> Decimate1D<F> for DecimateKernel
+where
+    F: Float + Copy + FromPrimitive,
+{
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        O: Write1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "decimate input must be non-empty",
+            });
+        }
+        let expected = self.expected_len(input.len());
+        let out_slice = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out_slice.len() != expected {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected,
+                got: out_slice.len(),
+            });
+        }
+
+        let y = decimate_impl(input, self.q);
+        out_slice.copy_from_slice(&y);
+        Ok(())
+    }
+
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<F>, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "decimate input must be non-empty",
+            });
+        }
+        Ok(decimate_impl(input, self.q))
+    }
+}
+
+/// Upsample by `up`, apply FIR `h`, and downsample by `down`.
+pub fn upfirdn<F>(h: &[F], x: &[F], up: usize, down: usize) -> Vec<F>
+where
+    F: Float + Copy,
+{
+    let kernel = match UpFirDnKernel::try_new(UpFirDnConfig {
+        h: h.to_vec(),
+        up,
+        down,
+    }) {
+        Ok(kernel) => kernel,
+        Err(_) => return Vec::new(),
+    };
+    kernel.run_alloc(x).unwrap_or_default()
+}
+
+/// Polyphase-like resampling using linear interpolation.
+///
+/// This implementation targets deterministic embedded-friendly behavior and
+/// supports the common `up/down` ratio contract from SciPy's `resample_poly`.
+pub fn resample_poly<F>(x: &[F], up: usize, down: usize) -> Vec<F>
+where
+    F: Float + Copy + FromPrimitive,
+{
+    let kernel = match ResamplePolyKernel::try_new(ResamplePolyConfig { up, down }) {
+        Ok(kernel) => kernel,
+        Err(_) => return Vec::new(),
+    };
+    kernel.run_alloc(x).unwrap_or_default()
+}
+
+/// Decimate by integer factor `q`.
+pub fn decimate<F>(x: &[F], q: usize) -> Vec<F>
+where
+    F: Float + Copy + FromPrimitive,
+{
+    let kernel = match DecimateKernel::try_new(DecimateConfig { q }) {
+        Ok(kernel) => kernel,
+        Err(_) => return Vec::new(),
+    };
+    kernel.run_alloc(x).unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signal::traits::{Decimate1D, ResamplePoly1D, UpFirDn1D};
     use approx::assert_abs_diff_eq;
 
     #[test]
@@ -97,6 +458,41 @@ mod tests {
         let y = upfirdn(&h, &x, 2, 1);
         let expected = vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 0.0];
         assert_eq!(y, expected);
+    }
+
+    #[test]
+    fn upfirdn_kernel_contracts_validate_and_check_output_shape() {
+        assert!(UpFirDnKernel::<f64>::try_new(UpFirDnConfig {
+            h: vec![],
+            up: 2,
+            down: 1,
+        })
+        .is_err());
+        assert!(UpFirDnKernel::<f64>::try_new(UpFirDnConfig {
+            h: vec![1.0],
+            up: 0,
+            down: 1,
+        })
+        .is_err());
+        assert!(UpFirDnKernel::<f64>::try_new(UpFirDnConfig {
+            h: vec![1.0],
+            up: 1,
+            down: 0,
+        })
+        .is_err());
+
+        let kernel = UpFirDnKernel::try_new(UpFirDnConfig {
+            h: vec![1.0f64, 1.0],
+            up: 2,
+            down: 1,
+        })
+        .expect("valid config");
+        let input = [1.0f64, 2.0, 3.0];
+        let mut out = vec![0.0f64; 6];
+        let err = kernel
+            .run_into(&input, &mut out)
+            .expect_err("mismatched output length should error");
+        assert!(matches!(err, ExecInvariantViolation::LengthMismatch { .. }));
     }
 
     #[test]
@@ -111,9 +507,37 @@ mod tests {
     }
 
     #[test]
+    fn resample_poly_kernel_contracts_validate_and_check_output_shape() {
+        assert!(ResamplePolyKernel::try_new(ResamplePolyConfig { up: 0, down: 1 }).is_err());
+        assert!(ResamplePolyKernel::try_new(ResamplePolyConfig { up: 1, down: 0 }).is_err());
+
+        let kernel = ResamplePolyKernel::try_new(ResamplePolyConfig { up: 2, down: 1 })
+            .expect("valid config");
+        let input = [1.0f64, 2.0, 3.0];
+        let mut out = vec![0.0f64; 5];
+        let err = kernel
+            .run_into(&input, &mut out)
+            .expect_err("mismatched output length should error");
+        assert!(matches!(err, ExecInvariantViolation::LengthMismatch { .. }));
+    }
+
+    #[test]
     fn decimate_reduces_length() {
         let x = [0.0f64, 1.0, 2.0, 3.0, 4.0];
         let y = decimate(&x, 2);
         assert_eq!(y, vec![0.0, 2.0, 4.0]);
+    }
+
+    #[test]
+    fn decimate_kernel_contracts_validate_and_check_output_shape() {
+        assert!(DecimateKernel::try_new(DecimateConfig { q: 0 }).is_err());
+
+        let kernel = DecimateKernel::try_new(DecimateConfig { q: 2 }).expect("valid config");
+        let input = [0.0f64, 1.0, 2.0, 3.0, 4.0];
+        let mut out = vec![0.0f64; 2];
+        let err = kernel
+            .run_into(&input, &mut out)
+            .expect_err("mismatched output length should error");
+        assert!(matches!(err, ExecInvariantViolation::LengthMismatch { .. }));
     }
 }

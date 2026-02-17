@@ -38,9 +38,9 @@ Status legend:
 | `sci-rs/src/signal/traits.rs` | refactored | signal trait-first contract surface |
 | `sci-rs/src/signal/convolve.rs` | refactored | kernel-first + legacy shim routing |
 | `sci-rs/src/signal/resample.rs` | refactored | kernel-first + legacy shim routing |
-| `sci-rs/src/signal/multirate.rs` | refactored | `upfirdn` / `resample_poly` / `decimate` compatibility shims implemented |
-| `sci-rs/src/signal/peak.rs` | refactored | `argrel*`, `find_peaks`, prominence/width, and CWT peak helpers implemented |
-| `sci-rs/src/signal/spectral.rs` | refactored | `periodogram`/`welch`/`csd`/`coherence` + `stft`/`istft`/`spectrogram` + `freqz`/`sosfreqz` |
+| `sci-rs/src/signal/multirate.rs` | refactored | trait-first `UpFirDnKernel` / `ResamplePolyKernel` / `DecimateKernel` with compatibility wrappers |
+| `sci-rs/src/signal/peak.rs` | refactored | trait-first extrema/peak/prominence/width/CWT kernels plus shim functions |
+| `sci-rs/src/signal/spectral.rs` | refactored | trait-first spectral kernels for periodogram/Welch/CSD/coherence/STFT/ISTFT/spectrogram/freqz/sosfreqz |
 | `sci-rs/src/signal/wave/mod.rs` | refactored | `square`/`sawtooth`/`chirp`/`gausspulse`/`sweep_poly` route through waveform kernels; 1D `unit_impulse` shim added |
 | `sci-rs/src/signal/wave/kernels.rs` | refactored | waveform kernels: `SquareWaveKernel`, `SawtoothWaveKernel`, `ChirpKernel`, `GaussPulseKernel`, `SweepPolyKernel`, `UnitImpulseKernel` |
 

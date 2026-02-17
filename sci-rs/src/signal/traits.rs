@@ -402,3 +402,360 @@ pub trait WindowGenerate<T> {
 /// Window generation capability in no-alloc mode.
 #[cfg(not(feature = "alloc"))]
 pub trait WindowGenerate<T> {}
+
+/// 1D upsample-filter-downsample capability (`upfirdn`).
+#[cfg(feature = "alloc")]
+pub trait UpFirDn1D<T> {
+    /// Run `upfirdn` into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Run `upfirdn` and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D rational resampling capability (`resample_poly`).
+#[cfg(feature = "alloc")]
+pub trait ResamplePoly1D<T> {
+    /// Run rational resampling into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Run rational resampling and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D integer downsampling capability (`decimate`).
+#[cfg(feature = "alloc")]
+pub trait Decimate1D<T> {
+    /// Run decimation into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Run decimation and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// Relative-extrema detection capability.
+#[cfg(feature = "alloc")]
+pub trait ArgRelExtrema1D<T> {
+    /// Compute extrema indices into a caller-provided vector.
+    fn run_into<I>(&self, input: &I, out: &mut Vec<usize>) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+
+    /// Compute extrema indices and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<usize>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// Local peak detection capability.
+#[cfg(feature = "alloc")]
+pub trait FindPeaks1D<T> {
+    /// Compute peak indices into a caller-provided vector.
+    fn run_into<I>(&self, input: &I, out: &mut Vec<usize>) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+
+    /// Compute peak indices and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<usize>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// Peak prominence computation capability.
+#[cfg(feature = "alloc")]
+pub trait PeakProminence1D<T> {
+    /// Output bundle type.
+    type Output;
+
+    /// Compute prominences into a caller-provided output bundle.
+    fn run_into<I, P>(
+        &self,
+        input: &I,
+        peaks: &P,
+        out: &mut Self::Output,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        P: Read1D<usize> + ?Sized;
+
+    /// Compute prominences and allocate output.
+    fn run_alloc<I, P>(&self, input: &I, peaks: &P) -> Result<Self::Output, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        P: Read1D<usize> + ?Sized;
+}
+
+/// Peak width computation capability.
+#[cfg(feature = "alloc")]
+pub trait PeakWidths1D<T> {
+    /// Output bundle type.
+    type Output;
+
+    /// Compute widths into a caller-provided output bundle.
+    fn run_into<I, P>(
+        &self,
+        input: &I,
+        peaks: &P,
+        out: &mut Self::Output,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        P: Read1D<usize> + ?Sized;
+
+    /// Compute widths and allocate output.
+    fn run_alloc<I, P>(&self, input: &I, peaks: &P) -> Result<Self::Output, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        P: Read1D<usize> + ?Sized;
+}
+
+/// Continuous wavelet transform capability.
+#[cfg(feature = "alloc")]
+pub trait Cwt1D<T> {
+    /// Output bundle type.
+    type Output;
+
+    /// Compute CWT into a caller-provided output bundle.
+    fn run_into<I>(&self, input: &I, out: &mut Self::Output) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+
+    /// Compute CWT and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<Self::Output, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// Wavelet-guided peak detection capability.
+#[cfg(feature = "alloc")]
+pub trait FindPeaksCwt1D<T> {
+    /// Compute peak indices into a caller-provided vector.
+    fn run_into<I>(&self, input: &I, out: &mut Vec<usize>) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+
+    /// Compute peak indices and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<usize>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// Periodogram capability.
+#[cfg(feature = "std")]
+pub trait Periodogram1D {
+    /// Compute one-sided PSD into caller-provided output buffers.
+    fn run_into<I, OF, OP>(
+        &self,
+        input: &I,
+        freqs: &mut OF,
+        pxx: &mut OP,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<f64> + ?Sized,
+        OF: Write1D<f64> + ?Sized,
+        OP: Write1D<f64> + ?Sized;
+
+    /// Compute one-sided PSD and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation>
+    where
+        I: Read1D<f64> + ?Sized;
+}
+
+/// Welch PSD capability.
+#[cfg(feature = "std")]
+pub trait WelchPsd1D {
+    /// Compute Welch PSD into caller-provided output buffers.
+    fn run_into<I, OF, OP>(
+        &self,
+        input: &I,
+        freqs: &mut OF,
+        pxx: &mut OP,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<f64> + ?Sized,
+        OF: Write1D<f64> + ?Sized,
+        OP: Write1D<f64> + ?Sized;
+
+    /// Compute Welch PSD and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation>
+    where
+        I: Read1D<f64> + ?Sized;
+}
+
+/// Cross power spectral density capability.
+#[cfg(feature = "std")]
+pub trait Csd1D {
+    /// Compute cross PSD into caller-provided output buffers.
+    fn run_into<I1, I2, OF, OP>(
+        &self,
+        x: &I1,
+        y: &I2,
+        freqs: &mut OF,
+        pxy: &mut OP,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I1: Read1D<f64> + ?Sized,
+        I2: Read1D<f64> + ?Sized,
+        OF: Write1D<f64> + ?Sized,
+        OP: Write1D<Complex<f64>> + ?Sized;
+
+    /// Compute cross PSD and allocate output.
+    fn run_alloc<I1, I2>(
+        &self,
+        x: &I1,
+        y: &I2,
+    ) -> Result<(Vec<f64>, Vec<Complex<f64>>), ExecInvariantViolation>
+    where
+        I1: Read1D<f64> + ?Sized,
+        I2: Read1D<f64> + ?Sized;
+}
+
+/// Magnitude-squared coherence capability.
+#[cfg(feature = "std")]
+pub trait Coherence1D {
+    /// Compute coherence into caller-provided output buffers.
+    fn run_into<I1, I2, OF, OC>(
+        &self,
+        x: &I1,
+        y: &I2,
+        freqs: &mut OF,
+        coherence: &mut OC,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I1: Read1D<f64> + ?Sized,
+        I2: Read1D<f64> + ?Sized,
+        OF: Write1D<f64> + ?Sized,
+        OC: Write1D<f64> + ?Sized;
+
+    /// Compute coherence and allocate output.
+    fn run_alloc<I1, I2>(
+        &self,
+        x: &I1,
+        y: &I2,
+    ) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation>
+    where
+        I1: Read1D<f64> + ?Sized,
+        I2: Read1D<f64> + ?Sized;
+}
+
+/// STFT capability.
+#[cfg(feature = "std")]
+pub trait Stft1D {
+    /// Output bundle type.
+    type Output;
+
+    /// Compute STFT into a caller-provided output bundle.
+    fn run_into<I>(&self, input: &I, out: &mut Self::Output) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<f64> + ?Sized;
+
+    /// Compute STFT and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<Self::Output, ExecInvariantViolation>
+    where
+        I: Read1D<f64> + ?Sized;
+}
+
+/// Inverse STFT capability.
+#[cfg(feature = "std")]
+pub trait Istft1D {
+    /// Compute inverse STFT into caller-provided output buffers.
+    fn run_into<O1, O2>(
+        &self,
+        zxx: &[Vec<Complex<f64>>],
+        t: &mut O1,
+        y: &mut O2,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        O1: Write1D<f64> + ?Sized,
+        O2: Write1D<f64> + ?Sized;
+
+    /// Compute inverse STFT and allocate output.
+    fn run_alloc(
+        &self,
+        zxx: &[Vec<Complex<f64>>],
+    ) -> Result<(Vec<f64>, Vec<f64>), ExecInvariantViolation>;
+}
+
+/// Spectrogram capability.
+#[cfg(feature = "std")]
+pub trait Spectrogram1D {
+    /// Output bundle type.
+    type Output;
+
+    /// Compute spectrogram into a caller-provided output bundle.
+    fn run_into<I>(&self, input: &I, out: &mut Self::Output) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<f64> + ?Sized;
+
+    /// Compute spectrogram and allocate output.
+    fn run_alloc<I>(&self, input: &I) -> Result<Self::Output, ExecInvariantViolation>
+    where
+        I: Read1D<f64> + ?Sized;
+}
+
+/// Digital filter frequency response capability.
+#[cfg(feature = "std")]
+pub trait Freqz1D {
+    /// Compute digital frequency response into caller-provided output buffers.
+    fn run_into<I1, I2, OW, OH>(
+        &self,
+        b: &I1,
+        a: &I2,
+        w: &mut OW,
+        h: &mut OH,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I1: Read1D<f64> + ?Sized,
+        I2: Read1D<f64> + ?Sized,
+        OW: Write1D<f64> + ?Sized,
+        OH: Write1D<Complex<f64>> + ?Sized;
+
+    /// Compute digital frequency response and allocate output.
+    fn run_alloc<I1, I2>(
+        &self,
+        b: &I1,
+        a: &I2,
+    ) -> Result<(Vec<f64>, Vec<Complex<f64>>), ExecInvariantViolation>
+    where
+        I1: Read1D<f64> + ?Sized,
+        I2: Read1D<f64> + ?Sized;
+}
+
+/// SOS cascade frequency response capability.
+#[cfg(feature = "std")]
+pub trait SosFreqz1D {
+    /// Compute SOS frequency response into caller-provided output buffers.
+    fn run_into<I, OW, OH>(
+        &self,
+        sos: &I,
+        w: &mut OW,
+        h: &mut OH,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<crate::signal::filter::design::Sos<f64>> + ?Sized,
+        OW: Write1D<f64> + ?Sized,
+        OH: Write1D<Complex<f64>> + ?Sized;
+
+    /// Compute SOS frequency response and allocate output.
+    fn run_alloc<I>(
+        &self,
+        sos: &I,
+    ) -> Result<(Vec<f64>, Vec<Complex<f64>>), ExecInvariantViolation>
+    where
+        I: Read1D<crate::signal::filter::design::Sos<f64>> + ?Sized;
+}

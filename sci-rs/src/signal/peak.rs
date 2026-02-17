@@ -1,10 +1,14 @@
 //! Peak-finding and wavelet helpers analogous to `scipy.signal` peak APIs.
 
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
-
+use crate::kernel::{ConfigError, ExecInvariantViolation, KernelLifecycle, Read1D};
+use crate::signal::traits::{
+    ArgRelExtrema1D, Cwt1D, FindPeaks1D, FindPeaksCwt1D, PeakProminence1D, PeakWidths1D,
+};
 use core::cmp::Ordering;
 use num_traits::{Float, FromPrimitive};
+
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 
 /// Options for [`find_peaks`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -44,6 +48,19 @@ where
     pub right_bases: Vec<usize>,
 }
 
+impl<F> Default for PeakProminencesResult<F>
+where
+    F: Float + Copy,
+{
+    fn default() -> Self {
+        Self {
+            prominences: Vec::new(),
+            left_bases: Vec::new(),
+            right_bases: Vec::new(),
+        }
+    }
+}
+
 /// Width result bundle for [`peak_widths`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct PeakWidthsResult<F>
@@ -60,8 +77,21 @@ where
     pub right_ips: Vec<F>,
 }
 
-/// Return indices of relative extrema according to `comparator`.
-pub fn argrelextrema<F, C>(x: &[F], comparator: C, order: usize) -> Vec<usize>
+impl<F> Default for PeakWidthsResult<F>
+where
+    F: Float + Copy,
+{
+    fn default() -> Self {
+        Self {
+            widths: Vec::new(),
+            width_heights: Vec::new(),
+            left_ips: Vec::new(),
+            right_ips: Vec::new(),
+        }
+    }
+}
+
+fn argrelextrema_impl<F, C>(x: &[F], comparator: C, order: usize) -> Vec<usize>
 where
     F: PartialOrd + Copy,
     C: Fn(F, F) -> bool,
@@ -87,28 +117,11 @@ where
     out
 }
 
-/// Return indices of relative maxima.
-pub fn argrelmax<F>(x: &[F], order: usize) -> Vec<usize>
+fn find_peaks_impl<F>(x: &[F], options: FindPeaksOptions<F>) -> Vec<usize>
 where
     F: PartialOrd + Copy,
 {
-    argrelextrema(x, |a, b| a > b, order)
-}
-
-/// Return indices of relative minima.
-pub fn argrelmin<F>(x: &[F], order: usize) -> Vec<usize>
-where
-    F: PartialOrd + Copy,
-{
-    argrelextrema(x, |a, b| a < b, order)
-}
-
-/// Find local peaks with optional height and distance filtering.
-pub fn find_peaks<F>(x: &[F], options: FindPeaksOptions<F>) -> Vec<usize>
-where
-    F: PartialOrd + Copy,
-{
-    let mut peaks = argrelmax(x, 1);
+    let mut peaks = argrelextrema_impl(x, |a, b| a > b, 1);
 
     if let Some(height) = options.height {
         peaks.retain(|&idx| x[idx] >= height);
@@ -136,8 +149,7 @@ where
     peaks
 }
 
-/// Compute peak prominences and base indices.
-pub fn peak_prominences<F>(x: &[F], peaks: &[usize]) -> PeakProminencesResult<F>
+fn peak_prominences_impl<F>(x: &[F], peaks: &[usize]) -> PeakProminencesResult<F>
 where
     F: Float + Copy,
 {
@@ -198,12 +210,11 @@ where
     }
 }
 
-/// Compute peak widths at relative height.
-pub fn peak_widths<F>(x: &[F], peaks: &[usize], rel_height: F) -> PeakWidthsResult<F>
+fn peak_widths_impl<F>(x: &[F], peaks: &[usize], rel_height: F) -> PeakWidthsResult<F>
 where
     F: Float + Copy + FromPrimitive,
 {
-    let prom = peak_prominences(x, peaks);
+    let prom = peak_prominences_impl(x, peaks);
     let valid_peaks: Vec<usize> = peaks.iter().copied().filter(|&p| p < x.len()).collect();
     let mut widths = Vec::with_capacity(prom.prominences.len());
     let mut width_heights = Vec::with_capacity(prom.prominences.len());
@@ -310,8 +321,7 @@ where
     out
 }
 
-/// Continuous wavelet transform using a Ricker wavelet family.
-pub fn cwt<F>(x: &[F], widths: &[usize]) -> Vec<Vec<F>>
+fn cwt_impl<F>(x: &[F], widths: &[usize]) -> Vec<Vec<F>>
 where
     F: Float + Copy + FromPrimitive,
 {
@@ -320,7 +330,6 @@ where
     }
     let mut rows = Vec::with_capacity(widths.len());
     for &w in widths {
-        let w = w.max(1);
         let n_points = (10 * w).max(3).min(x.len().max(3));
         let wavelet = ricker_wavelet(n_points, F::from_usize(w).expect("scalar conversion"));
         rows.push(convolve_same(x, &wavelet));
@@ -328,29 +337,526 @@ where
     rows
 }
 
+/// Constructor config for [`ArgRelExtremaKernel`].
+#[derive(Debug, Clone, Copy)]
+pub struct ArgRelExtremaConfig<F>
+where
+    F: PartialOrd + Copy,
+{
+    /// Neighbor count considered on each side.
+    pub order: usize,
+    /// Comparator used to declare local extrema.
+    pub comparator: fn(F, F) -> bool,
+}
+
+/// Trait-first extrema kernel.
+#[derive(Debug, Clone, Copy)]
+pub struct ArgRelExtremaKernel<F>
+where
+    F: PartialOrd + Copy,
+{
+    order: usize,
+    comparator: fn(F, F) -> bool,
+}
+
+impl<F> KernelLifecycle for ArgRelExtremaKernel<F>
+where
+    F: PartialOrd + Copy,
+{
+    type Config = ArgRelExtremaConfig<F>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.order == 0 {
+            return Err(ConfigError::InvalidArgument {
+                arg: "order",
+                reason: "order must be > 0",
+            });
+        }
+        Ok(Self {
+            order: config.order,
+            comparator: config.comparator,
+        })
+    }
+}
+
+impl<F> ArgRelExtrema1D<F> for ArgRelExtremaKernel<F>
+where
+    F: PartialOrd + Copy,
+{
+    fn run_into<I>(&self, input: &I, out: &mut Vec<usize>) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let result = self.run_alloc(input)?;
+        out.clear();
+        out.extend(result);
+        Ok(())
+    }
+
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<usize>, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "argrelextrema input must be non-empty",
+            });
+        }
+        Ok(argrelextrema_impl(input, self.comparator, self.order))
+    }
+}
+
+/// Constructor config for [`FindPeaksKernel`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FindPeaksConfig<F>
+where
+    F: PartialOrd + Copy,
+{
+    /// Minimum peak height.
+    pub height: Option<F>,
+    /// Minimum spacing between retained peaks.
+    pub distance: Option<usize>,
+}
+
+impl<F> From<FindPeaksOptions<F>> for FindPeaksConfig<F>
+where
+    F: PartialOrd + Copy,
+{
+    fn from(value: FindPeaksOptions<F>) -> Self {
+        Self {
+            height: value.height,
+            distance: value.distance,
+        }
+    }
+}
+
+/// Trait-first `find_peaks` kernel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FindPeaksKernel<F>
+where
+    F: PartialOrd + Copy,
+{
+    height: Option<F>,
+    distance: Option<usize>,
+}
+
+impl<F> KernelLifecycle for FindPeaksKernel<F>
+where
+    F: PartialOrd + Copy,
+{
+    type Config = FindPeaksConfig<F>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if matches!(config.distance, Some(0)) {
+            return Err(ConfigError::InvalidArgument {
+                arg: "distance",
+                reason: "distance must be >= 1 when provided",
+            });
+        }
+        Ok(Self {
+            height: config.height,
+            distance: config.distance,
+        })
+    }
+}
+
+impl<F> FindPeaks1D<F> for FindPeaksKernel<F>
+where
+    F: PartialOrd + Copy,
+{
+    fn run_into<I>(&self, input: &I, out: &mut Vec<usize>) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let result = self.run_alloc(input)?;
+        out.clear();
+        out.extend(result);
+        Ok(())
+    }
+
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<usize>, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "find_peaks input must be non-empty",
+            });
+        }
+        Ok(find_peaks_impl(
+            input,
+            FindPeaksOptions {
+                height: self.height,
+                distance: self.distance,
+            },
+        ))
+    }
+}
+
+/// Constructor config for [`PeakProminencesKernel`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PeakProminencesConfig;
+
+/// Trait-first `peak_prominences` kernel.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PeakProminencesKernel;
+
+impl KernelLifecycle for PeakProminencesKernel {
+    type Config = PeakProminencesConfig;
+
+    fn try_new(_config: Self::Config) -> Result<Self, ConfigError> {
+        Ok(Self)
+    }
+}
+
+impl<F> PeakProminence1D<F> for PeakProminencesKernel
+where
+    F: Float + Copy,
+{
+    type Output = PeakProminencesResult<F>;
+
+    fn run_into<I, P>(
+        &self,
+        input: &I,
+        peaks: &P,
+        out: &mut Self::Output,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        P: Read1D<usize> + ?Sized,
+    {
+        *out = self.run_alloc(input, peaks)?;
+        Ok(())
+    }
+
+    fn run_alloc<I, P>(&self, input: &I, peaks: &P) -> Result<Self::Output, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        P: Read1D<usize> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "peak_prominences input must be non-empty",
+            });
+        }
+        let peaks = peaks.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(peak_prominences_impl(input, peaks))
+    }
+}
+
+/// Constructor config for [`PeakWidthsKernel`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PeakWidthsConfig<F>
+where
+    F: Float + Copy,
+{
+    /// Relative prominence height used for width calculation.
+    pub rel_height: F,
+}
+
+/// Trait-first `peak_widths` kernel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PeakWidthsKernel<F>
+where
+    F: Float + Copy,
+{
+    rel_height: F,
+}
+
+impl<F> KernelLifecycle for PeakWidthsKernel<F>
+where
+    F: Float + Copy,
+{
+    type Config = PeakWidthsConfig<F>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if !config.rel_height.is_finite() || config.rel_height < F::zero() {
+            return Err(ConfigError::InvalidArgument {
+                arg: "rel_height",
+                reason: "rel_height must be finite and >= 0",
+            });
+        }
+        Ok(Self {
+            rel_height: config.rel_height,
+        })
+    }
+}
+
+impl<F> PeakWidths1D<F> for PeakWidthsKernel<F>
+where
+    F: Float + Copy + FromPrimitive,
+{
+    type Output = PeakWidthsResult<F>;
+
+    fn run_into<I, P>(
+        &self,
+        input: &I,
+        peaks: &P,
+        out: &mut Self::Output,
+    ) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        P: Read1D<usize> + ?Sized,
+    {
+        *out = self.run_alloc(input, peaks)?;
+        Ok(())
+    }
+
+    fn run_alloc<I, P>(&self, input: &I, peaks: &P) -> Result<Self::Output, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        P: Read1D<usize> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "peak_widths input must be non-empty",
+            });
+        }
+        let peaks = peaks.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(peak_widths_impl(input, peaks, self.rel_height))
+    }
+}
+
+/// Constructor config for [`CwtKernel`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CwtConfig {
+    /// Positive wavelet widths.
+    pub widths: Vec<usize>,
+}
+
+/// Trait-first CWT kernel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CwtKernel {
+    widths: Vec<usize>,
+}
+
+impl KernelLifecycle for CwtKernel {
+    type Config = CwtConfig;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.widths.is_empty() {
+            return Err(ConfigError::EmptyInput { arg: "widths" });
+        }
+        if config.widths.contains(&0) {
+            return Err(ConfigError::InvalidArgument {
+                arg: "widths",
+                reason: "all widths must be > 0",
+            });
+        }
+        Ok(Self {
+            widths: config.widths,
+        })
+    }
+}
+
+impl<F> Cwt1D<F> for CwtKernel
+where
+    F: Float + Copy + FromPrimitive,
+{
+    type Output = Vec<Vec<F>>;
+
+    fn run_into<I>(&self, input: &I, out: &mut Self::Output) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        *out = self.run_alloc(input)?;
+        Ok(())
+    }
+
+    fn run_alloc<I>(&self, input: &I) -> Result<Self::Output, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "cwt input must be non-empty",
+            });
+        }
+        Ok(cwt_impl(input, &self.widths))
+    }
+}
+
+/// Constructor config for [`FindPeaksCwtKernel`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FindPeaksCwtConfig {
+    /// Positive wavelet widths.
+    pub widths: Vec<usize>,
+}
+
+/// Trait-first `find_peaks_cwt` kernel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FindPeaksCwtKernel {
+    widths: Vec<usize>,
+}
+
+impl KernelLifecycle for FindPeaksCwtKernel {
+    type Config = FindPeaksCwtConfig;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.widths.is_empty() {
+            return Err(ConfigError::EmptyInput { arg: "widths" });
+        }
+        if config.widths.contains(&0) {
+            return Err(ConfigError::InvalidArgument {
+                arg: "widths",
+                reason: "all widths must be > 0",
+            });
+        }
+        Ok(Self {
+            widths: config.widths,
+        })
+    }
+}
+
+impl<F> FindPeaksCwt1D<F> for FindPeaksCwtKernel
+where
+    F: Float + Copy + FromPrimitive,
+{
+    fn run_into<I>(&self, input: &I, out: &mut Vec<usize>) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let result = self.run_alloc(input)?;
+        out.clear();
+        out.extend(result);
+        Ok(())
+    }
+
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<usize>, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        if input.is_empty() {
+            return Err(ExecInvariantViolation::InvalidState {
+                reason: "find_peaks_cwt input must be non-empty",
+            });
+        }
+
+        let cwt_map = cwt_impl(input, &self.widths);
+        let mut score = vec![F::zero(); input.len()];
+        for row in &cwt_map {
+            for (i, val) in row.iter().enumerate() {
+                score[i] = score[i] + val.abs();
+            }
+        }
+
+        let min_distance = self.widths.iter().copied().min().unwrap_or(1).max(1);
+        let peaks_kernel = FindPeaksKernel::try_new(FindPeaksConfig {
+            height: None,
+            distance: Some(min_distance),
+        })
+        .map_err(ExecInvariantViolation::from)?;
+        peaks_kernel.run_alloc(&score)
+    }
+}
+
+/// Return indices of relative extrema according to `comparator`.
+pub fn argrelextrema<F, C>(x: &[F], comparator: C, order: usize) -> Vec<usize>
+where
+    F: PartialOrd + Copy,
+    C: Fn(F, F) -> bool,
+{
+    argrelextrema_impl(x, comparator, order)
+}
+
+/// Return indices of relative maxima.
+pub fn argrelmax<F>(x: &[F], order: usize) -> Vec<usize>
+where
+    F: PartialOrd + Copy,
+{
+    let kernel = match ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+        order,
+        comparator: |a, b| a > b,
+    }) {
+        Ok(kernel) => kernel,
+        Err(_) => return Vec::new(),
+    };
+    kernel.run_alloc(x).unwrap_or_default()
+}
+
+/// Return indices of relative minima.
+pub fn argrelmin<F>(x: &[F], order: usize) -> Vec<usize>
+where
+    F: PartialOrd + Copy,
+{
+    let kernel = match ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+        order,
+        comparator: |a, b| a < b,
+    }) {
+        Ok(kernel) => kernel,
+        Err(_) => return Vec::new(),
+    };
+    kernel.run_alloc(x).unwrap_or_default()
+}
+
+/// Find local peaks with optional height and distance filtering.
+pub fn find_peaks<F>(x: &[F], options: FindPeaksOptions<F>) -> Vec<usize>
+where
+    F: PartialOrd + Copy,
+{
+    let kernel = match FindPeaksKernel::try_new(options.into()) {
+        Ok(kernel) => kernel,
+        Err(_) => return Vec::new(),
+    };
+    kernel.run_alloc(x).unwrap_or_default()
+}
+
+/// Compute peak prominences and base indices.
+pub fn peak_prominences<F>(x: &[F], peaks: &[usize]) -> PeakProminencesResult<F>
+where
+    F: Float + Copy,
+{
+    let kernel = match PeakProminencesKernel::try_new(PeakProminencesConfig) {
+        Ok(kernel) => kernel,
+        Err(_) => return PeakProminencesResult::default(),
+    };
+    kernel.run_alloc(x, peaks).unwrap_or_default()
+}
+
+/// Compute peak widths at relative height.
+pub fn peak_widths<F>(x: &[F], peaks: &[usize], rel_height: F) -> PeakWidthsResult<F>
+where
+    F: Float + Copy + FromPrimitive,
+{
+    let kernel = match PeakWidthsKernel::try_new(PeakWidthsConfig { rel_height }) {
+        Ok(kernel) => kernel,
+        Err(_) => return PeakWidthsResult::default(),
+    };
+    kernel.run_alloc(x, peaks).unwrap_or_default()
+}
+
+/// Continuous wavelet transform using a Ricker wavelet family.
+pub fn cwt<F>(x: &[F], widths: &[usize]) -> Vec<Vec<F>>
+where
+    F: Float + Copy + FromPrimitive,
+{
+    let kernel = match CwtKernel::try_new(CwtConfig {
+        widths: widths.to_vec(),
+    }) {
+        Ok(kernel) => kernel,
+        Err(_) => return Vec::new(),
+    };
+    kernel.run_alloc(x).unwrap_or_default()
+}
+
 /// Find peaks from a wavelet-enhanced score map.
 pub fn find_peaks_cwt<F>(x: &[F], widths: &[usize]) -> Vec<usize>
 where
     F: Float + Copy + FromPrimitive,
 {
-    if x.is_empty() || widths.is_empty() {
-        return Vec::new();
-    }
-    let cwt_map = cwt(x, widths);
-    let mut score = vec![F::zero(); x.len()];
-    for row in &cwt_map {
-        for (i, val) in row.iter().enumerate() {
-            score[i] = score[i] + val.abs();
-        }
-    }
-    let min_distance = widths.iter().copied().min().unwrap_or(1).max(1);
-    find_peaks(
-        &score,
-        FindPeaksOptions {
-            height: None,
-            distance: Some(min_distance),
-        },
-    )
+    let kernel = match FindPeaksCwtKernel::try_new(FindPeaksCwtConfig {
+        widths: widths.to_vec(),
+    }) {
+        Ok(kernel) => kernel,
+        Err(_) => return Vec::new(),
+    };
+    kernel.run_alloc(x).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -367,6 +873,27 @@ mod tests {
     }
 
     #[test]
+    fn argrel_kernel_contracts_validate_order() {
+        let bad = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+            order: 0,
+            comparator: |a: f64, b: f64| a > b,
+        });
+        assert!(bad.is_err());
+
+        let kernel = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+            order: 1,
+            comparator: |a: f64, b: f64| a > b,
+        })
+        .expect("valid config");
+        let x = [0.0f64, 1.0, 0.0];
+        let mut out = vec![];
+        kernel
+            .run_into(&x, &mut out)
+            .expect("argrelextrema run_into should succeed");
+        assert_eq!(out, vec![1]);
+    }
+
+    #[test]
     fn find_peaks_applies_height_and_distance() {
         let x = [0.0f64, 1.0, 0.1, 0.9, 0.0, 2.0, 0.0];
         let peaks = find_peaks(
@@ -377,6 +904,15 @@ mod tests {
             },
         );
         assert_eq!(peaks, vec![1, 5]);
+    }
+
+    #[test]
+    fn find_peaks_kernel_contracts_validate_distance() {
+        let bad = FindPeaksKernel::<f64>::try_new(FindPeaksConfig {
+            height: None,
+            distance: Some(0),
+        });
+        assert!(bad.is_err());
     }
 
     #[test]
@@ -398,6 +934,18 @@ mod tests {
     }
 
     #[test]
+    fn peak_prominence_kernel_contract_round_trip() {
+        let kernel = PeakProminencesKernel::try_new(PeakProminencesConfig).expect("valid config");
+        let x = [0.0f64, 1.0, 0.2, 0.8, 0.1, 2.0, 0.0];
+        let peaks = [1usize, 5usize];
+        let mut out = PeakProminencesResult::<f64>::default();
+        kernel
+            .run_into(&x, &peaks, &mut out)
+            .expect("peak prominence run_into should succeed");
+        assert_eq!(out.prominences.len(), 2);
+    }
+
+    #[test]
     fn cwt_shape_matches_widths_and_input_len() {
         let x = [0.0f64, 1.0, 0.0, -1.0, 0.0];
         let widths = [1usize, 2, 3];
@@ -409,10 +957,28 @@ mod tests {
     }
 
     #[test]
+    fn cwt_kernel_contracts_validate_widths() {
+        assert!(CwtKernel::try_new(CwtConfig { widths: vec![] }).is_err());
+        assert!(CwtKernel::try_new(CwtConfig {
+            widths: vec![1, 0, 3]
+        })
+        .is_err());
+    }
+
+    #[test]
     fn find_peaks_cwt_detects_main_peak() {
         let x = [0.0f64, 0.3, 1.2, 0.2, 0.1, 0.0];
         let peaks = find_peaks_cwt(&x, &[1, 2, 3]);
         assert!(peaks.contains(&2));
+    }
+
+    #[test]
+    fn find_peaks_cwt_kernel_contracts_validate_widths() {
+        assert!(FindPeaksCwtKernel::try_new(FindPeaksCwtConfig { widths: vec![] }).is_err());
+        assert!(FindPeaksCwtKernel::try_new(FindPeaksCwtConfig {
+            widths: vec![1, 0, 3]
+        })
+        .is_err());
     }
 
     #[test]
@@ -421,5 +987,13 @@ mod tests {
         let widths = peak_widths(&x, &[1], 0.5);
         assert_eq!(widths.widths.len(), 1);
         assert_abs_diff_eq!(widths.widths[0], 1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn peak_width_kernel_rejects_negative_rel_height() {
+        let bad = PeakWidthsKernel::try_new(PeakWidthsConfig {
+            rel_height: -0.1f64,
+        });
+        assert!(bad.is_err());
     }
 }

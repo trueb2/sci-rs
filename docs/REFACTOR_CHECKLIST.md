@@ -31,6 +31,24 @@ Legend:
 | signal | `SosFiltZiDesign1D<T>` | yes | yes | yes | `SosFiltZiKernel` |
 | signal | `LFilter1D<T>` | yes | yes | yes | reference parity + length checks |
 | signal | `FiltFilt1D<T>` | yes | yes | yes | reference parity + length checks |
+| signal | `UpFirDn1D<T>` | yes | yes | yes | `UpFirDnKernel` |
+| signal | `ResamplePoly1D<T>` | yes | yes | yes | `ResamplePolyKernel` |
+| signal | `Decimate1D<T>` | yes | yes | yes | `DecimateKernel` |
+| signal | `ArgRelExtrema1D<T>` | yes | yes | yes | `ArgRelExtremaKernel` |
+| signal | `FindPeaks1D<T>` | yes | yes | yes | `FindPeaksKernel` |
+| signal | `PeakProminence1D<T>` | yes | yes | yes | `PeakProminencesKernel` |
+| signal | `PeakWidths1D<T>` | yes | yes | yes | `PeakWidthsKernel` |
+| signal | `Cwt1D<T>` | yes | yes | yes | `CwtKernel` |
+| signal | `FindPeaksCwt1D<T>` | yes | yes | yes | `FindPeaksCwtKernel` |
+| signal | `Periodogram1D` | yes | yes | yes | `PeriodogramKernel` |
+| signal | `WelchPsd1D` | yes | yes | yes | `WelchKernel` |
+| signal | `Csd1D` | yes | yes | yes | `CsdKernel` |
+| signal | `Coherence1D` | yes | yes | yes | `CoherenceKernel` |
+| signal | `Stft1D` | yes | yes | yes | `StftKernel` |
+| signal | `Istft1D` | yes | yes | yes | `IstftKernel` |
+| signal | `Spectrogram1D` | yes | yes | yes | `SpectrogramKernel` |
+| signal | `Freqz1D` | yes | yes | yes | `FreqzKernel` |
+| signal | `SosFreqz1D` | yes | yes | yes | `SosFreqzKernel` |
 | design | `FirWinDesign<T>` | yes | yes | yes | `FirWinKernel` with constructor validation |
 | design | `IirDesign<T>` | yes | yes | yes | `IirFilterKernel` and `ButterKernel` |
 | design | `ZpkTransform<T>` | yes | yes | yes | `BilinearZpkKernel`, `Lp2*ZpkKernel` family |
@@ -81,9 +99,9 @@ This sweep is complete for the refactor scope; remaining legacy entrypoints are 
 | `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | complete | checked helper APIs and axis kernels landed |
 | `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | complete | covered by `IirFilterKernel` plus dedicated zpk helper kernels; checked `iirfilter/butter` entrypoints now available |
 | `signal/wave` | `square`/`sawtooth`/`chirp`/`gausspulse`/`sweep_poly` (ndarray N-D) + `unit_impulse` (1D) | complete | waveform APIs now route through trait-first kernels |
-| `signal/multirate` | `upfirdn` / `resample_poly` / `decimate` | complete | multirate compatibility shims implemented with deterministic kernel-style behavior |
-| `signal/peak` | `argrelextrema` / `argrelmax` / `argrelmin` / `find_peaks` / `peak_prominences` / `peak_widths` / `cwt` / `find_peaks_cwt` | complete | peak-finding and wavelet helpers implemented and tested |
-| `signal/spectral` | `periodogram` / `welch` / `csd` / `coherence` / `stft` / `istft` / `spectrogram` / `freqz` / `sosfreqz` | complete | FFT-backed spectral compatibility surface implemented and tested |
+| `signal/multirate` | `upfirdn` / `resample_poly` / `decimate` | complete | trait-first kernels (`UpFirDnKernel`, `ResamplePolyKernel`, `DecimateKernel`) plus compatibility shims |
+| `signal/peak` | `argrelextrema` / `argrelmax` / `argrelmin` / `find_peaks` / `peak_prominences` / `peak_widths` / `cwt` / `find_peaks_cwt` | complete | trait-first kernels added with constructor and execution contract tests for each capability |
+| `signal/spectral` | `periodogram` / `welch` / `csd` / `coherence` / `stft` / `istft` / `spectrogram` / `freqz` / `sosfreqz` | complete | trait-first kernelized spectral path with config validation and output-shape invariant tests |
 | `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | complete | trait-first stats kernels exist and are parity-tested; free functions are compatibility shims |
 | `linalg` | `companion_dyn` | complete | checked kernel-backed construction path added |
 
