@@ -1,60 +1,16 @@
 use crate::kernel::KernelLifecycle;
-use crate::signal::traits::SquareWave1D;
+use crate::signal::traits::{ChirpWave1D, SawtoothWave1D, SquareWave1D, UnitImpulse1D};
 use nalgebra::RealField;
-use ndarray::{Array, ArrayBase, Data, Dimension, RawData};
+use ndarray::{Array, Array1, ArrayBase, Data, Dimension};
+use num_traits::FromPrimitive;
 
 mod kernels;
 pub use kernels::*;
 
 /// Return a periodic square-wave waveform.
 ///
-/// The square wave has a period ``2*pi``, has value +1 from 0 to
-/// ``2*pi*duty`` and -1 from ``2*pi*duty`` to ``2*pi``. `duty` must be in
-/// the interval \[0,1\].
-///
-/// Note that this is not band-limited.  It produces an infinite number
-/// of harmonics, which are aliased back and forth across the frequency
-/// spectrum.
-///
-/// Parameters
-/// ----------
-/// t : array_like  
-///   The input time array.
-/// duty : array_like, optional  
-///   Duty cycle.  Default is 0.5 (50% duty cycle).
-///   If an array, causes wave shape to change over time, and must be the
-///   same length as t.
-///
-/// Returns
-/// -------
-/// y : ndarray  
-///   Output array containing the square waveform.
-///
-/// Examples
-/// --------
-/// A 5 Hz waveform sampled at 500 Hz for 1 second:
-///
-/// ```custom,{class=language-python}
-/// >>> import numpy as np
-/// >>> from scipy import signal
-/// >>> import matplotlib.pyplot as plt
-/// >>> t = np.linspace(0, 1, 500, endpoint=False)
-/// >>> plt.plot(t, signal.square(2 * np.pi * 5 * t))
-/// >>> plt.ylim(-2, 2)
-/// ```
-///
-/// A pulse-width modulated sine wave:
-///
-/// ```custom,{class=language-python}
-/// >>> plt.figure()
-/// >>> sig = np.sin(2 * np.pi * t)
-/// >>> pwm = signal.square(2 * np.pi * 30 * t, duty=(sig + 1)/2)
-/// >>> plt.subplot(2, 1, 1)
-/// >>> plt.plot(t, sig)
-/// >>> plt.subplot(2, 1, 2)
-/// >>> plt.plot(t, pwm)
-/// >>> plt.ylim(-1.5, 1.5)
-/// ```
+/// The square wave has period `2*pi`, has value `+1` from `0` to
+/// `2*pi*duty`, and `-1` from `2*pi*duty` to `2*pi`.
 pub fn square<F, S, D>(t: &ArrayBase<S, D>, duty: F) -> Array<F, D>
 where
     F: RealField + Copy,
@@ -75,20 +31,110 @@ where
 
     #[cfg(not(feature = "alloc"))]
     {
-        assert!(F::zero() <= duty && duty <= F::one());
-        let duty_threshold = F::two_pi() * duty;
-        t.mapv(|t| {
-            let x = t % F::two_pi();
-            // Because % is the reminder and not the modulo operator, x can be negative.
-            let x = if x < F::zero() { x + F::two_pi() } else { x };
-            debug_assert!(F::zero() <= x && x <= F::two_pi());
-            if x < duty_threshold {
-                F::one()
-            } else {
-                -F::one()
-            }
-        })
+        let kernel = SquareWaveKernel::try_new(SquareWaveConfig { duty })
+            .expect("duty must be in [0, 1] for square wave generation");
+        t.mapv(|v| kernel.sample(v))
     }
+}
+
+/// Return a periodic sawtooth waveform.
+///
+/// The waveform has period `2*pi`, rises from `-1` to `1` over
+/// `[0, width*2*pi)`, and falls from `1` to `-1` over `[width*2*pi, 2*pi)`.
+pub fn sawtooth<F, S, D>(t: &ArrayBase<S, D>, width: F) -> Array<F, D>
+where
+    F: RealField + Copy,
+    S: Data<Elem = F>,
+    D: Dimension,
+{
+    #[cfg(feature = "alloc")]
+    {
+        let kernel = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width })
+            .expect("width must be in [0, 1] for sawtooth generation");
+        let flat_t = t.iter().copied().collect::<alloc::vec::Vec<_>>();
+        let flat_y = kernel
+            .run_alloc(&flat_t)
+            .expect("sawtooth wave generation failed");
+        Array::from_shape_vec(t.raw_dim(), flat_y)
+            .expect("sawtooth wave output shape conversion failed")
+    }
+
+    #[cfg(not(feature = "alloc"))]
+    {
+        let kernel = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width })
+            .expect("width must be in [0, 1] for sawtooth generation");
+        t.mapv(|v| kernel.sample(v))
+    }
+}
+
+/// Return a cosine chirp waveform.
+///
+/// The output is `cos(phase + phi)`, where `phase` is the integral of
+/// instantaneous frequency according to `method`.
+pub fn chirp<F, S, D>(
+    t: &ArrayBase<S, D>,
+    f0: F,
+    t1: F,
+    f1: F,
+    method: ChirpMethod,
+    phi_deg: F,
+    vertex_zero: bool,
+) -> Array<F, D>
+where
+    F: RealField + Copy + FromPrimitive,
+    S: Data<Elem = F>,
+    D: Dimension,
+{
+    #[cfg(feature = "alloc")]
+    {
+        let kernel = ChirpKernel::try_new(ChirpConfig {
+            f0,
+            t1,
+            f1,
+            method,
+            phi_deg,
+            vertex_zero,
+        })
+        .expect("invalid chirp config");
+        let flat_t = t.iter().copied().collect::<alloc::vec::Vec<_>>();
+        let flat_y = kernel.run_alloc(&flat_t).expect("chirp generation failed");
+        Array::from_shape_vec(t.raw_dim(), flat_y).expect("chirp output shape conversion failed")
+    }
+
+    #[cfg(not(feature = "alloc"))]
+    {
+        let kernel = ChirpKernel::try_new(ChirpConfig {
+            f0,
+            t1,
+            f1,
+            method,
+            phi_deg,
+            vertex_zero,
+        })
+        .expect("invalid chirp config");
+        t.mapv(|v| kernel.sample(v))
+    }
+}
+
+/// Return a 1D unit impulse (Kronecker delta).
+///
+/// `len` defines output length. `idx` selects the index whose value is `1`;
+/// when omitted, index `0` is used.
+pub fn unit_impulse<F>(len: usize, idx: Option<usize>) -> Array1<F>
+where
+    F: RealField + Copy,
+{
+    let kernel = UnitImpulseKernel::try_new(UnitImpulseConfig {
+        len,
+        idx: idx.unwrap_or(0),
+    })
+    .expect("invalid unit impulse config");
+
+    let mut out = Array1::from_elem(len, F::zero());
+    kernel
+        .run_into(&mut out)
+        .expect("unit impulse generation failed");
+    out
 }
 
 #[cfg(test)]
@@ -108,7 +154,7 @@ mod tests {
             -1.0, -1.0, -1.0, -1.0, -1.0, -1.0,
         ]);
         let result = square(&t, 0.0);
-        assert_vec_eq(result, expected);
+        assert_vec_eq_f32(result, expected);
     }
 
     #[test]
@@ -122,7 +168,7 @@ mod tests {
             1.0, 1.0, 1.0,
         ]);
         let result = square(&t, 1.0);
-        assert_vec_eq(result, expected);
+        assert_vec_eq_f32(result, expected);
     }
 
     #[test]
@@ -147,9 +193,9 @@ mod tests {
         let result_03 = square(&t, 0.3);
         let result_05 = square(&t, 0.5);
         let result_07 = square(&t, 0.7);
-        assert_vec_eq(result_03, expected_03);
-        assert_vec_eq(result_05, expected_05);
-        assert_vec_eq(result_07, expected_07);
+        assert_vec_eq_f32(result_03, expected_03);
+        assert_vec_eq_f32(result_05, expected_05);
+        assert_vec_eq_f32(result_07, expected_07);
     }
 
     #[test]
@@ -169,14 +215,154 @@ mod tests {
             [[-1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, -1.0, -1.0]],
         ]);
         let result = square(&t, 0.67);
-        assert_vec_eq(result, expected);
+        assert_vec_eq_f32(result, expected);
+    }
+
+    #[test]
+    fn test_sawtooth_width_0_03_05_10() {
+        let t = arr1(&[-4.0, -1.2, -0.1, 0.0, 0.3, 1.7, 3.14, 4.2, 6.1, 7.9]);
+        let expected_w0 = arr1(&[
+            0.2732395447352,
+            -0.6180281365795,
+            -0.9681690113816,
+            1.0,
+            0.9045070341449,
+            0.4588731934876,
+            0.0005069573829,
+            -0.3369015219719,
+            -0.9416903057211,
+            0.4853518991481,
+        ]);
+        let expected_w03 = arr1(&[
+            0.818913635336,
+            -0.454325909399,
+            -0.954527159117,
+            -1.0,
+            -0.681690113816,
+            0.803756021708,
+            0.429295653404,
+            -0.05271645996,
+            -0.916700436744,
+            0.715493669506,
+        ]);
+        let expected_w05 = arr1(&[
+            0.45352091053,
+            -0.236056273159,
+            -0.936338022763,
+            -1.0,
+            -0.80901406829,
+            0.082253613025,
+            0.998986085234,
+            0.326196956056,
+            -0.883380611442,
+            0.029296201704,
+        ]);
+        let expected_w1 = arr1(&[
+            -0.2732395447352,
+            0.6180281365795,
+            0.9681690113816,
+            -1.0,
+            -0.9045070341449,
+            -0.4588731934876,
+            -0.0005069573829,
+            0.3369015219719,
+            0.9416903057211,
+            -0.4853518991481,
+        ]);
+
+        assert_vec_eq_f64(sawtooth(&t, 0.0), expected_w0, 1e-9);
+        assert_vec_eq_f64(sawtooth(&t, 0.3), expected_w03, 1e-9);
+        assert_vec_eq_f64(sawtooth(&t, 0.5), expected_w05, 1e-9);
+        assert_vec_eq_f64(sawtooth(&t, 1.0), expected_w1, 1e-9);
+    }
+
+    #[test]
+    fn test_chirp_methods_against_known_reference_values() {
+        let t = arr1(&[0.0, 0.25, 0.5, 1.0, 1.5, 2.0]);
+
+        let expected_linear = arr1(&[
+            0.965925826289,
+            -0.849202181527,
+            0.13052619222,
+            0.258819045103,
+            -0.13052619222,
+            0.965925826289,
+        ]);
+        let expected_quadratic = arr1(&[
+            0.965925826289,
+            -0.677598304996,
+            -0.751839807479,
+            -0.258819045103,
+            -0.896872741533,
+            0.965925826289,
+        ]);
+        let expected_log = arr1(&[
+            0.965925826289,
+            -0.900975876087,
+            0.506478779795,
+            -0.880553288116,
+            -0.615287915617,
+            -0.844978171921,
+        ]);
+        let expected_hyp = arr1(&[
+            0.965925826289,
+            -0.926478064699,
+            0.706545882009,
+            -0.874787746575,
+            0.985381739166,
+            0.586404074679,
+        ]);
+
+        assert_vec_eq_f64(
+            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Linear, 15.0, false),
+            expected_linear,
+            1e-9,
+        );
+        assert_vec_eq_f64(
+            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Quadratic, 15.0, false),
+            expected_quadratic,
+            1e-9,
+        );
+        assert_vec_eq_f64(
+            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Logarithmic, 15.0, false),
+            expected_log,
+            1e-9,
+        );
+        assert_vec_eq_f64(
+            chirp(&t, 2.0, 2.0, 5.0, ChirpMethod::Hyperbolic, 15.0, false),
+            expected_hyp,
+            1e-9,
+        );
+    }
+
+    #[test]
+    fn test_unit_impulse_default_and_offset_index() {
+        let default = unit_impulse::<f64>(7, None);
+        assert_eq!(default.to_vec(), vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+
+        let shifted = unit_impulse::<f64>(7, Some(2));
+        assert_eq!(shifted.to_vec(), vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
+
+        let centered = unit_impulse::<f64>(8, Some(8 / 2));
+        assert_eq!(
+            centered.to_vec(),
+            vec![0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+        );
     }
 
     #[track_caller]
-    fn assert_vec_eq<D: Dimension>(a: Array<f32, D>, b: Array<f32, D>) {
+    fn assert_vec_eq_f32<D: Dimension>(a: Array<f32, D>, b: Array<f32, D>) {
         assert_eq!(a.shape(), b.shape());
         for (a, b) in a.into_iter().zip(b) {
             assert_abs_diff_eq!(a, b, epsilon = 1e-6);
+        }
+    }
+
+    #[track_caller]
+    fn assert_vec_eq_f64<D: Dimension>(a: Array<f64, D>, b: Array<f64, D>, epsilon: f64) {
+        assert_eq!(a.shape(), b.shape());
+        for (a, b) in a.into_iter().zip(b) {
+            assert_abs_diff_eq!(a, b, epsilon = epsilon);
         }
     }
 }

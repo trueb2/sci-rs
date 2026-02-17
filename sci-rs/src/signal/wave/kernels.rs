@@ -1,11 +1,24 @@
 //! Trait-first kernels for waveform generation.
 
 use crate::kernel::{ConfigError, ExecInvariantViolation, KernelLifecycle, Read1D, Write1D};
-use crate::signal::traits::SquareWave1D;
+use crate::signal::traits::{ChirpWave1D, SawtoothWave1D, SquareWave1D, UnitImpulse1D};
 use nalgebra::RealField;
+use num_traits::{FromPrimitive, One, Zero};
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+
+fn wrap_phase<F>(t: F) -> F
+where
+    F: RealField + Copy,
+{
+    let two_pi = F::two_pi();
+    let mut x = t % two_pi;
+    if x < F::zero() {
+        x += two_pi;
+    }
+    x
+}
 
 /// Constructor config for [`SquareWaveKernel`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,13 +48,9 @@ where
         self.duty
     }
 
-    fn sample(&self, t: F) -> F {
-        let two_pi = F::two_pi();
-        let duty_threshold = two_pi * self.duty;
-        let mut x = t % two_pi;
-        if x < F::zero() {
-            x += two_pi;
-        }
+    pub(super) fn sample(&self, t: F) -> F {
+        let duty_threshold = F::two_pi() * self.duty;
+        let x = wrap_phase(t);
         if x < duty_threshold {
             F::one()
         } else {
@@ -103,12 +112,392 @@ where
     }
 }
 
+/// Constructor config for [`SawtoothWaveKernel`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SawtoothWaveConfig<F>
+where
+    F: RealField + Copy,
+{
+    /// Width of the rising ramp in `[0, 1]`.
+    pub width: F,
+}
+
+/// Trait-first 1D sawtooth-wave generator.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SawtoothWaveKernel<F>
+where
+    F: RealField + Copy,
+{
+    width: F,
+}
+
+impl<F> SawtoothWaveKernel<F>
+where
+    F: RealField + Copy,
+{
+    /// Return configured width.
+    pub fn width(&self) -> F {
+        self.width
+    }
+
+    pub(super) fn sample(&self, t: F) -> F {
+        let x = wrap_phase(t);
+        let pi = F::pi();
+
+        if self.width == F::zero() {
+            return F::one() - x / pi;
+        }
+        if self.width == F::one() {
+            return x / pi - F::one();
+        }
+
+        let threshold = F::two_pi() * self.width;
+        if x < threshold {
+            x / (pi * self.width) - F::one()
+        } else {
+            (pi * (self.width + F::one()) - x) / (pi * (F::one() - self.width))
+        }
+    }
+}
+
+impl<F> KernelLifecycle for SawtoothWaveKernel<F>
+where
+    F: RealField + Copy,
+{
+    type Config = SawtoothWaveConfig<F>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.width < F::zero() || config.width > F::one() {
+            return Err(ConfigError::InvalidArgument {
+                arg: "width",
+                reason: "width must be in [0, 1]",
+            });
+        }
+        Ok(Self {
+            width: config.width,
+        })
+    }
+}
+
+impl<F> SawtoothWave1D<F> for SawtoothWaveKernel<F>
+where
+    F: RealField + Copy,
+{
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        O: Write1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        let out = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out.len() != input.len() {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: input.len(),
+                got: out.len(),
+            });
+        }
+        out.iter_mut()
+            .zip(input.iter())
+            .for_each(|(out, t)| *out = self.sample(*t));
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<F>, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(input.iter().map(|t| self.sample(*t)).collect())
+    }
+}
+
+/// Chirp sweep method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChirpMethod {
+    /// Linear frequency sweep.
+    Linear,
+    /// Quadratic frequency sweep.
+    Quadratic,
+    /// Logarithmic frequency sweep.
+    Logarithmic,
+    /// Hyperbolic frequency sweep.
+    Hyperbolic,
+}
+
+/// Constructor config for [`ChirpKernel`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChirpConfig<F>
+where
+    F: RealField + Copy,
+{
+    /// Frequency at `t=0`.
+    pub f0: F,
+    /// Time at which `f1` is specified.
+    pub t1: F,
+    /// Frequency at `t=t1`.
+    pub f1: F,
+    /// Sweep method.
+    pub method: ChirpMethod,
+    /// Phase offset in degrees.
+    pub phi_deg: F,
+    /// When `method` is quadratic, choose parabola vertex at `t=0` if true and `t=t1` if false.
+    pub vertex_zero: bool,
+}
+
+/// Trait-first 1D chirp-wave generator.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChirpKernel<F>
+where
+    F: RealField + Copy,
+{
+    f0: F,
+    t1: F,
+    f1: F,
+    method: ChirpMethod,
+    phi_rad: F,
+    vertex_zero: bool,
+}
+
+impl<F> ChirpKernel<F>
+where
+    F: RealField + Copy + FromPrimitive,
+{
+    /// Return configured chirp method.
+    pub fn method(&self) -> ChirpMethod {
+        self.method
+    }
+
+    fn phase_at(&self, t: F) -> F {
+        let two_pi = F::two_pi();
+        let half = F::from_f64(0.5).expect("scalar conversion");
+        let third = F::from_f64(1.0 / 3.0).expect("scalar conversion");
+
+        match self.method {
+            ChirpMethod::Linear => {
+                let beta = (self.f1 - self.f0) / self.t1;
+                two_pi * (self.f0 * t + half * beta * t * t)
+            }
+            ChirpMethod::Quadratic => {
+                let beta = (self.f1 - self.f0) / (self.t1 * self.t1);
+                if self.vertex_zero {
+                    two_pi * (self.f0 * t + beta * t * t * t * third)
+                } else {
+                    let t1_minus_t = self.t1 - t;
+                    two_pi
+                        * (self.f1 * t
+                            + beta
+                                * ((t1_minus_t * t1_minus_t * t1_minus_t)
+                                    - self.t1 * self.t1 * self.t1)
+                                * third)
+                }
+            }
+            ChirpMethod::Logarithmic => {
+                if self.f0 == self.f1 {
+                    two_pi * self.f0 * t
+                } else {
+                    let ratio = self.f1 / self.f0;
+                    let beta = self.t1 / ratio.ln();
+                    two_pi * beta * self.f0 * (ratio.powf(t / self.t1) - F::one())
+                }
+            }
+            ChirpMethod::Hyperbolic => {
+                if self.f0 == self.f1 {
+                    two_pi * self.f0 * t
+                } else {
+                    let sing = -self.f1 * self.t1 / (self.f0 - self.f1);
+                    two_pi * (-sing * self.f0) * (F::one() - t / sing).abs().ln()
+                }
+            }
+        }
+    }
+
+    pub(super) fn sample(&self, t: F) -> F {
+        (self.phase_at(t) + self.phi_rad).cos()
+    }
+}
+
+impl<F> KernelLifecycle for ChirpKernel<F>
+where
+    F: RealField + Copy + FromPrimitive,
+{
+    type Config = ChirpConfig<F>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.t1 == F::zero() {
+            return Err(ConfigError::InvalidArgument {
+                arg: "t1",
+                reason: "t1 must be nonzero",
+            });
+        }
+
+        match config.method {
+            ChirpMethod::Logarithmic => {
+                if config.f0 * config.f1 <= F::zero() {
+                    return Err(ConfigError::InvalidArgument {
+                        arg: "f0/f1",
+                        reason: "logarithmic chirp requires nonzero f0/f1 with same sign",
+                    });
+                }
+            }
+            ChirpMethod::Hyperbolic => {
+                if config.f0 == F::zero() || config.f1 == F::zero() {
+                    return Err(ConfigError::InvalidArgument {
+                        arg: "f0/f1",
+                        reason: "hyperbolic chirp requires nonzero f0 and f1",
+                    });
+                }
+            }
+            ChirpMethod::Linear | ChirpMethod::Quadratic => {}
+        }
+
+        let deg = F::from_f64(180.0).expect("scalar conversion");
+        Ok(Self {
+            f0: config.f0,
+            t1: config.t1,
+            f1: config.f1,
+            method: config.method,
+            phi_rad: config.phi_deg * F::pi() / deg,
+            vertex_zero: config.vertex_zero,
+        })
+    }
+}
+
+impl<F> ChirpWave1D<F> for ChirpKernel<F>
+where
+    F: RealField + Copy + FromPrimitive,
+{
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+        O: Write1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        let out = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out.len() != input.len() {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: input.len(),
+                got: out.len(),
+            });
+        }
+        out.iter_mut()
+            .zip(input.iter())
+            .for_each(|(out, t)| *out = self.sample(*t));
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<F>, ExecInvariantViolation>
+    where
+        I: Read1D<F> + ?Sized,
+    {
+        let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
+        Ok(input.iter().map(|t| self.sample(*t)).collect())
+    }
+}
+
+/// Constructor config for [`UnitImpulseKernel`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnitImpulseConfig {
+    /// Number of output samples.
+    pub len: usize,
+    /// Index at which the impulse is set to one.
+    pub idx: usize,
+}
+
+/// Trait-first 1D unit-impulse generator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnitImpulseKernel {
+    len: usize,
+    idx: usize,
+}
+
+impl UnitImpulseKernel {
+    /// Return configured impulse length.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Return whether configured impulse length is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Return configured impulse index.
+    pub fn idx(&self) -> usize {
+        self.idx
+    }
+}
+
+impl KernelLifecycle for UnitImpulseKernel {
+    type Config = UnitImpulseConfig;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.len == 0 {
+            return Err(ConfigError::InvalidArgument {
+                arg: "len",
+                reason: "impulse length must be > 0",
+            });
+        }
+        if config.idx >= config.len {
+            return Err(ConfigError::InvalidArgument {
+                arg: "idx",
+                reason: "impulse index must be within [0, len)",
+            });
+        }
+        Ok(Self {
+            len: config.len,
+            idx: config.idx,
+        })
+    }
+}
+
+impl<T> UnitImpulse1D<T> for UnitImpulseKernel
+where
+    T: Zero + One + Copy,
+{
+    fn run_into<O>(&self, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        O: Write1D<T> + ?Sized,
+    {
+        let out = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out.len() != self.len {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: self.len,
+                got: out.len(),
+            });
+        }
+        out.fill(T::zero());
+        out[self.idx] = T::one();
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    fn run_alloc(&self) -> Result<Vec<T>, ExecInvariantViolation> {
+        let mut out = vec![T::zero(); self.len];
+        out[self.idx] = T::one();
+        Ok(out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SquareWaveConfig, SquareWaveKernel};
+    use super::{
+        ChirpConfig, ChirpKernel, ChirpMethod, SawtoothWaveConfig, SawtoothWaveKernel,
+        SquareWaveConfig, SquareWaveKernel, UnitImpulseConfig, UnitImpulseKernel,
+    };
     use crate::kernel::{ConfigError, KernelLifecycle};
-    use crate::signal::traits::SquareWave1D;
-    use crate::signal::wave::square;
+    use crate::signal::traits::{ChirpWave1D, SawtoothWave1D, SquareWave1D, UnitImpulse1D};
+    use crate::signal::wave::{chirp, sawtooth, square, unit_impulse};
     use approx::assert_abs_diff_eq;
     use ndarray::{arr1, Array1};
 
@@ -125,6 +514,60 @@ mod tests {
             .iter()
             .zip(expected.iter())
             .for_each(|(a, b)| assert_abs_diff_eq!(*a, *b, epsilon = 1e-6));
+    }
+
+    #[test]
+    fn sawtooth_wave_kernel_matches_ndarray_sawtooth() {
+        let kernel = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width: 0.3f32 })
+            .expect("kernel should initialize");
+        let input = arr1(&[-4.0f32, -1.2, -0.1, 0.0, 0.3, 1.7, 3.14, 4.2, 6.1, 7.9]);
+        let expected = sawtooth(&input, 0.3f32);
+        let actual = kernel.run_alloc(&input).expect("kernel should run");
+        actual
+            .iter()
+            .zip(expected.iter())
+            .for_each(|(a, b)| assert_abs_diff_eq!(*a, *b, epsilon = 1e-6));
+    }
+
+    #[test]
+    fn chirp_kernel_matches_ndarray_chirp() {
+        let kernel = ChirpKernel::try_new(ChirpConfig {
+            f0: 2.0f64,
+            t1: 2.0,
+            f1: 5.0,
+            method: ChirpMethod::Quadratic,
+            phi_deg: 15.0,
+            vertex_zero: false,
+        })
+        .expect("kernel should initialize");
+
+        let input = arr1(&[0.0f64, 0.25, 0.5, 1.0, 1.5, 2.0]);
+        let expected = chirp(
+            &input,
+            2.0f64,
+            2.0,
+            5.0,
+            ChirpMethod::Quadratic,
+            15.0,
+            false,
+        );
+        let actual = kernel.run_alloc(&input).expect("kernel should run");
+        actual
+            .iter()
+            .zip(expected.iter())
+            .for_each(|(a, b)| assert_abs_diff_eq!(*a, *b, epsilon = 1e-9));
+    }
+
+    #[test]
+    fn unit_impulse_kernel_matches_ndarray_unit_impulse() {
+        let kernel = UnitImpulseKernel::try_new(UnitImpulseConfig { len: 7, idx: 2 })
+            .expect("kernel should initialize");
+        let expected = unit_impulse::<f64>(7, Some(2));
+        let actual: Vec<f64> = kernel.run_alloc().expect("kernel should run");
+        actual
+            .iter()
+            .zip(expected.iter())
+            .for_each(|(a, b)| assert_abs_diff_eq!(*a, *b, epsilon = 1e-12));
     }
 
     #[test]
@@ -146,6 +589,46 @@ mod tests {
         out.iter()
             .zip(expected.iter())
             .for_each(|(a, b)| assert_abs_diff_eq!(*a, *b, epsilon = 1e-12));
+    }
+
+    #[test]
+    fn sawtooth_kernel_run_into_supports_ndarray_output() {
+        let kernel = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width: 0.5f64 })
+            .expect("kernel should initialize");
+        let input = [0.0f64, 0.5, 1.0, 1.5];
+        let mut out = Array1::from(vec![0.0f64; input.len()]);
+        kernel
+            .run_into(&input, &mut out)
+            .expect("run_into should succeed");
+        assert!(out.iter().all(|v| !v.is_nan()));
+    }
+
+    #[test]
+    fn chirp_kernel_run_into_supports_ndarray_output() {
+        let kernel = ChirpKernel::try_new(ChirpConfig {
+            f0: 3.0f64,
+            t1: 2.0,
+            f1: 7.0,
+            method: ChirpMethod::Linear,
+            phi_deg: 0.0,
+            vertex_zero: true,
+        })
+        .expect("kernel should initialize");
+        let input = [0.0f64, 0.5, 1.0, 1.5];
+        let mut out = Array1::from(vec![0.0f64; input.len()]);
+        kernel
+            .run_into(&input, &mut out)
+            .expect("run_into should succeed");
+        assert!(out.iter().all(|v| !v.is_nan()));
+    }
+
+    #[test]
+    fn unit_impulse_kernel_run_into_supports_ndarray_output() {
+        let kernel = UnitImpulseKernel::try_new(UnitImpulseConfig { len: 5, idx: 3 })
+            .expect("kernel should initialize");
+        let mut out = Array1::from(vec![0.0f64; 5]);
+        kernel.run_into(&mut out).expect("run_into should succeed");
+        assert_eq!(out.to_vec(), vec![0.0, 0.0, 0.0, 1.0, 0.0]);
     }
 
     #[test]
@@ -173,6 +656,94 @@ mod tests {
                 arg: "out",
                 expected: 3,
                 got: 2
+            }
+        ));
+    }
+
+    #[test]
+    fn sawtooth_kernel_validates_width() {
+        let err = SawtoothWaveKernel::try_new(SawtoothWaveConfig { width: -0.1f32 })
+            .expect_err("width below zero must fail");
+        assert_eq!(
+            err,
+            ConfigError::InvalidArgument {
+                arg: "width",
+                reason: "width must be in [0, 1]",
+            }
+        );
+    }
+
+    #[test]
+    fn chirp_kernel_validates_constructor_rules() {
+        let err = ChirpKernel::try_new(ChirpConfig {
+            f0: -2.0f64,
+            t1: 2.0,
+            f1: 5.0,
+            method: ChirpMethod::Logarithmic,
+            phi_deg: 0.0,
+            vertex_zero: true,
+        })
+        .expect_err("log chirp with mixed-sign endpoints must fail");
+        assert_eq!(
+            err,
+            ConfigError::InvalidArgument {
+                arg: "f0/f1",
+                reason: "logarithmic chirp requires nonzero f0/f1 with same sign",
+            }
+        );
+
+        let err = ChirpKernel::try_new(ChirpConfig {
+            f0: 0.0f64,
+            t1: 2.0,
+            f1: 3.0,
+            method: ChirpMethod::Hyperbolic,
+            phi_deg: 0.0,
+            vertex_zero: true,
+        })
+        .expect_err("hyperbolic chirp with zero f0 must fail");
+        assert_eq!(
+            err,
+            ConfigError::InvalidArgument {
+                arg: "f0/f1",
+                reason: "hyperbolic chirp requires nonzero f0 and f1",
+            }
+        );
+    }
+
+    #[test]
+    fn unit_impulse_kernel_validates_length_index_and_output_length() {
+        let err = UnitImpulseKernel::try_new(UnitImpulseConfig { len: 0, idx: 0 })
+            .expect_err("zero length must fail");
+        assert_eq!(
+            err,
+            ConfigError::InvalidArgument {
+                arg: "len",
+                reason: "impulse length must be > 0",
+            }
+        );
+
+        let err = UnitImpulseKernel::try_new(UnitImpulseConfig { len: 4, idx: 4 })
+            .expect_err("idx at len must fail");
+        assert_eq!(
+            err,
+            ConfigError::InvalidArgument {
+                arg: "idx",
+                reason: "impulse index must be within [0, len)",
+            }
+        );
+
+        let kernel = UnitImpulseKernel::try_new(UnitImpulseConfig { len: 4, idx: 1 })
+            .expect("kernel should initialize");
+        let mut out = [0.0f64; 3];
+        let err = kernel
+            .run_into(&mut out)
+            .expect_err("short output should fail");
+        assert!(matches!(
+            err,
+            crate::kernel::ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: 4,
+                got: 3
             }
         ));
     }

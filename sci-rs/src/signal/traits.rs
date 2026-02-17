@@ -87,6 +87,48 @@ pub trait SquareWave1D<T> {
         I: Read1D<T> + ?Sized;
 }
 
+/// 1D sawtooth-wave generation capability.
+pub trait SawtoothWave1D<T> {
+    /// Generate a sawtooth wave from phase/time input into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Generate a sawtooth wave and allocate output.
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D chirp-wave generation capability.
+pub trait ChirpWave1D<T> {
+    /// Generate a chirp wave from phase/time input into a caller-provided output buffer.
+    fn run_into<I, O>(&self, input: &I, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized,
+        O: Write1D<T> + ?Sized;
+
+    /// Generate a chirp wave and allocate output.
+    #[cfg(feature = "alloc")]
+    fn run_alloc<I>(&self, input: &I) -> Result<Vec<T>, ExecInvariantViolation>
+    where
+        I: Read1D<T> + ?Sized;
+}
+
+/// 1D unit-impulse generation capability.
+pub trait UnitImpulse1D<T> {
+    /// Generate a unit impulse into a caller-provided output buffer.
+    fn run_into<O>(&self, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        O: Write1D<T> + ?Sized;
+
+    /// Generate a unit impulse and allocate output.
+    #[cfg(feature = "alloc")]
+    fn run_alloc(&self) -> Result<Vec<T>, ExecInvariantViolation>;
+}
+
 /// 1D `lfilter` capability.
 pub trait LFilter1D<T> {
     /// Run filtering into a caller-provided output buffer.
