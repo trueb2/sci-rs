@@ -160,6 +160,22 @@ pub trait SavgolFilter1D<T> {
         I: Read1D<T> + ?Sized;
 }
 
+/// 1D Savitzky-Golay coefficient design capability.
+#[cfg(feature = "alloc")]
+pub trait SavgolCoeffsDesign<T> {
+    /// Design coefficients into a caller-provided output buffer.
+    fn run_into<O>(&self, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        O: Write1D<T> + ?Sized;
+
+    /// Design coefficients and allocate output.
+    fn run_alloc(&self) -> Result<Vec<T>, ExecInvariantViolation>;
+}
+
+/// 1D Savitzky-Golay coefficient design capability in no-alloc mode.
+#[cfg(not(feature = "alloc"))]
+pub trait SavgolCoeffsDesign<T> {}
+
 /// 1D `sosfilt` capability.
 pub trait SosFilt1D<T> {
     /// Run second-order-sections filtering into a caller-provided output buffer.

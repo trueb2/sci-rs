@@ -3,7 +3,7 @@ use nalgebra::{DVector, RealField, Scalar};
 use num_traits::{Float, One, Zero};
 use sci_rs_core::{Error, Result};
 
-use super::{design::Sos, pad, sosfilt_dyn, sosfilt_zi_dyn, Pad};
+use super::{design::Sos, pad, sosfilt_dyn, sosfilt_zi_checked, Pad};
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
@@ -38,7 +38,7 @@ where
     let (edge, ext) = pad(Pad::Odd, None, x, 0, ntaps)?;
 
     let mut init_sos = sos.to_vec();
-    sosfilt_zi_dyn::<_, _, Sos<F>>(init_sos.iter_mut());
+    sosfilt_zi_checked::<_, _, Sos<F>>(init_sos.iter_mut())?;
 
     let x0 = *ext.index(0);
     let mut sos_x = init_sos.clone();

@@ -1,4 +1,6 @@
 use super::arraytools::{check_and_get_axis_dyn, check_and_get_axis_st, ndarray_shape_as_array_st};
+use crate::kernel::KernelLifecycle;
+use crate::signal::traits::LFilter1D;
 use alloc::{vec, vec::Vec};
 use core::marker::Copy;
 use ndarray::{
@@ -422,17 +424,48 @@ where
         });
     }
 
+    let (axis, axis_inner) = {
+        let ax = check_and_get_axis_dyn(axis, &x)?;
+        (Axis(ax), ax)
+    };
+
+    // Kernel-first fast path for 1D filtering without explicit zi.
+    if zi.is_none()
+        && ndim == 1
+        && axis_inner == 0
+        && a.len() == 1
+        && !a.is_empty()
+        && !a.first().is_some_and(|a0| a0.is_zero())
+    {
+        let kernel = super::LFilterKernel::try_new(super::LFilterConfig {
+            b: b.iter().copied().collect(),
+            a: a.iter().copied().collect(),
+            axis: Some(0),
+        })
+        .map_err(|_| Error::InvalidArg {
+            arg: "b/a".into(),
+            reason: "Could not initialize lfilter kernel.".into(),
+        })?;
+        let input = x.iter().copied().collect::<Vec<_>>();
+        let output = kernel.run_alloc(&input).map_err(|_| Error::InvalidArg {
+            arg: "x".into(),
+            reason: "lfilter kernel execution failed.".into(),
+        })?;
+        let output_len = output.len();
+        let y =
+            Array::from_shape_vec(IxDyn(&[output_len]), output).map_err(|_| Error::InvalidArg {
+                arg: "x".into(),
+                reason: "Could not cast kernel output to ndarray.".into(),
+            })?;
+        return Ok((y, None));
+    }
+
     if a.len() > 1 {
         return Err(Error::InvalidArg {
             arg: "a".into(),
             reason: "IIR lfilter path is not yet implemented in this API. Use sosfilt/sosfiltfilt kernels for IIR filtering.".into(),
         });
     }
-
-    let (axis, axis_inner) = {
-        let ax = check_and_get_axis_dyn(axis, &x)?;
-        (Axis(ax), ax)
-    };
 
     if a.is_empty() {
         return Err(Error::InvalidArg {
@@ -668,6 +701,8 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::kernel::KernelLifecycle;
+    use crate::signal::traits::LFilter1D;
     use alloc::vec;
     use approx::assert_relative_eq;
     use ndarray::{array, ArrayBase, Dim, Ix, OwnedRepr, ViewRepr};
@@ -709,6 +744,27 @@ mod test {
                 assert_relative_eq!(r, e, max_relative = 1e-6);
             })
         }
+    }
+
+    #[test]
+    fn one_dim_fir_uses_kernel_fast_path() {
+        let b = array![0.5f64, 0.25];
+        let a = array![1.0f64];
+        let x = array![1.0f64, 0.0, 1.0, 0.0, 1.0];
+
+        let kernel = super::super::LFilterKernel::try_new(super::super::LFilterConfig {
+            b: b.to_vec(),
+            a: a.to_vec(),
+            axis: Some(0),
+        })
+        .expect("kernel should initialize");
+        let expected = kernel
+            .run_alloc(&x.to_vec())
+            .expect("kernel 1D IIR path should run");
+        let actual = lfilter(b.view(), a.view(), x.into_dyn(), None, None)
+            .expect("free-function wrapper should run")
+            .0;
+        assert_eq!(actual.iter().copied().collect::<Vec<_>>(), expected);
     }
 
     #[test]

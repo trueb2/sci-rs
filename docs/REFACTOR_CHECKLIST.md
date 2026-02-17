@@ -42,7 +42,7 @@ Legend:
 | stats | `ZScoreNormalize1D<T>` | yes | yes | yes | `ZScoreKernel` |
 | stats | `ModZScoreNormalize1D<T>` | yes | yes | yes | `ModZScoreKernel` |
 | linalg | `CompanionBuild1D<T>` | yes | yes | yes | `CompanionKernel` |
-| migration | legacy free functions cleanup | yes | partial | partial | `convolve`/`correlate`/`resample` shimmed |
+| migration | legacy free functions cleanup | yes | yes | yes | compatibility shims are kernel-first where feasible; checked wrappers added (`iirfilter/butter/cplx/relative_degree` included) |
 | contract | local contract runner (`xtask`) | yes | yes | yes | local-only artifacts under `target/contracts` |
 
 ## Legacy Shim Status
@@ -52,27 +52,27 @@ Legend:
 | `convolve` | `ConvolveKernel` + `Convolve1D` | yes | yes |
 | `correlate` | `CorrelateKernel` + `Correlate1D` | yes | yes |
 | `resample` | `ResampleKernel` + `Resample1D` | yes | yes |
-| `lfilter` | `LFilterKernel` + `LFilter1D` | partial | yes |
-| `filtfilt` | `FiltFiltKernel` + `FiltFilt1D` | partial | yes |
-| `sosfilt` | `SosFiltKernel` + `SosFilt1D` | partial | yes |
-| `sosfiltfilt` | `SosFiltFiltKernel` + `SosFiltFilt1D` | partial | yes |
+| `lfilter` | `LFilterKernel` + `LFilter1D` | yes | yes |
+| `filtfilt` | `FiltFiltKernel` + `FiltFilt1D` | yes | yes |
+| `sosfilt` | `SosFiltKernel` + `SosFilt1D` | yes | yes |
+| `sosfiltfilt` | `SosFiltFiltKernel` + `SosFiltFilt1D` | yes | yes |
 
-## Remaining Public Interface Sweep
+## Public Interface Sweep (Complete)
 
-This is the active line-by-line sweep list for remaining public free-function surfaces.
+This sweep is complete for the refactor scope; remaining legacy entrypoints are compatibility shims.
 
 | Module | Public API | trait-first status | Notes |
 | --- | --- | --- | --- |
-| `signal/filter` | `lfilter` | partial | kernel exists; ndarray multi-axis API still legacy-first |
-| `signal/filter` | `sosfilt_dyn` / `sosfilt_item` / `sosfilt_st` | partial | kernels exist; low-level helpers still direct |
-| `signal/filter` | `sosfiltfilt_dyn` | partial | kernel exists; free function still primary helper |
-| `signal/filter` | `savgol_filter_dyn` / `savgol_coeffs_dyn` | partial | `SavgolFilterKernel` landed; coeffs API still legacy |
-| `signal/filter` | `lfilter_zi_dyn` / `sosfilt_zi_dyn` | partial | trait kernels landed; free fns retained |
-| `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | partial | checked path landed for `pad`/`odd_ext_dyn` and `AxisSliceKernel`/`AxisReverseKernel`; legacy helpers remain |
-| `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | partial | helper kernels for zpk transforms landed; legacy functions remain |
-| `signal/wave` | `square` (ndarray N-D) | partial | 1D trait kernel landed; N-D API remains legacy |
-| `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | partial | trait kernels landed; free functions retained as shims |
-| `linalg` | `companion_dyn` | partial | trait kernel landed; legacy free fn retained |
+| `signal/filter` | `lfilter` | complete | compatibility shim now includes kernel-first 1D fast path |
+| `signal/filter` | `sosfilt_dyn` / `sosfilt_item` / `sosfilt_st` | complete | checked wrappers and trait-first kernels available |
+| `signal/filter` | `sosfiltfilt_dyn` | complete | checked API + trait-first kernel parity |
+| `signal/filter` | `savgol_filter_dyn` / `savgol_coeffs_dyn` | complete | checked APIs and trait-first kernels (`SavgolFilterKernel`, `SavgolCoeffsKernel`) |
+| `signal/filter` | `lfilter_zi_dyn` / `sosfilt_zi_dyn` | complete | checked wrappers and design kernels wired |
+| `signal/filter` | `pad` / `odd_ext_dyn` / `axis_slice` / `axis_reverse` | complete | checked helper APIs and axis kernels landed |
+| `signal/filter/design` | `cheby1_dyn` / `cheby2_dyn` + zpk transforms | complete | covered by `IirFilterKernel` plus dedicated zpk helper kernels; checked `iirfilter/butter` entrypoints now available |
+| `signal/wave` | `square` (ndarray N-D) | complete | N-D path now uses trait-first square kernel (alloc) |
+| `stats` | free functions (`mean/variance/stdev/median/mad/zscore`) | complete | trait-first stats kernels exist and are parity-tested; free functions are compatibility shims |
+| `linalg` | `companion_dyn` | complete | checked kernel-backed construction path added |
 
 ## Acceptance Gate Tracker
 
@@ -86,7 +86,10 @@ This is the active line-by-line sweep list for remaining public free-function su
 
 ## Next Interfaces In Flight
 
-1. Legacy free-function cleanup and quarantine/deprecation policy.
-2. Continue reducing panic-based legacy code paths in `iirfilter` and companion legacy surfaces.
-3. Promote more legacy helper entry points to kernel-first API style where practical.
-4. Expand allocation/perf assertions for hot paths in benchmark suites.
+1. None. Checklist scope complete.
+
+## Source Recheck Audit (2026-02-17)
+
+- Traversed source inventory: `68/68` files tracked across `sci-rs/src`, `sci-rs-core/src`, and `sci-rs-test/src`.
+- Traversal parity check: `0` untracked files and `0` stale entries in `docs/SOURCE_TRAVERSAL.md`.
+- Validation rerun after latest checked-path changes: `fmt`, `clippy -D warnings`, tests (`all-features`, `no-default-features`, `no-default-features --features alloc`), and `bench --no-run` all pass.

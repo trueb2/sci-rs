@@ -4,10 +4,12 @@ use nalgebra::RealField;
 use num_traits::Float;
 
 #[cfg(feature = "alloc")]
+use crate::error::Error;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 #[cfg(feature = "alloc")]
-use super::{iirfilter_dyn, DigitalFilter, FilterBandType, FilterOutputType, FilterType, Sos};
+use super::{iirfilter_checked, DigitalFilter, FilterBandType, FilterOutputType, FilterType, Sos};
 ///
 /// Butterworth digital and analog filter design.
 ///
@@ -28,10 +30,26 @@ pub fn butter_dyn<F>(
 where
     F: RealField + Float + Sum,
 {
+    butter_checked(order, wn, btype, analog, output, fs).expect("invalid butter configuration")
+}
+
+/// Checked Butterworth design entrypoint used by trait-first kernels.
+#[cfg(feature = "alloc")]
+pub fn butter_checked<F>(
+    order: usize,
+    wn: Vec<F>,
+    btype: Option<FilterBandType>,
+    analog: Option<bool>,
+    output: Option<FilterOutputType>,
+    fs: Option<F>,
+) -> Result<DigitalFilter<F>, Error>
+where
+    F: RealField + Float + Sum,
+{
     let btype = btype.unwrap_or(FilterBandType::Lowpass);
     let analog = analog.unwrap_or(false);
     let output = output.unwrap_or(FilterOutputType::Ba);
-    iirfilter_dyn::<F>(
+    iirfilter_checked::<F>(
         order,
         wn,
         None,

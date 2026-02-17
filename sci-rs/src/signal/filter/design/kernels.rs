@@ -14,10 +14,10 @@ use num_traits::{real::Real, Float, MulAdd, Pow};
 use alloc::vec::Vec;
 
 use super::{
-    bilinear_zpk_dyn, butter_dyn, cplxreal_dyn, firwin_dyn, iirfilter_dyn, lp2bp_zpk_dyn,
-    lp2bs_zpk_dyn, lp2hp_zpk_dyn, lp2lp_zpk_dyn, relative_degree_dyn, zpk2sos_dyn, zpk2tf_dyn,
-    BaFormatFilter, DigitalFilter, FilterBandType, FilterOutputType, FilterType, SosFormatFilter,
-    ZpkFormatFilter, ZpkPairing,
+    bilinear_zpk_dyn, butter_checked, cplxreal_checked, firwin_dyn, iirfilter_checked,
+    lp2bp_zpk_dyn, lp2bs_zpk_dyn, lp2hp_zpk_dyn, lp2lp_zpk_dyn, relative_degree_checked,
+    zpk2sos_dyn, zpk2tf_dyn, BaFormatFilter, DigitalFilter, FilterBandType, FilterOutputType,
+    FilterType, SosFormatFilter, ZpkFormatFilter, ZpkPairing,
 };
 
 /// Constructor config for [`FirWinKernel`].
@@ -341,15 +341,15 @@ where
     type Output = DigitalFilter<F>;
 
     fn run_alloc(&self) -> Result<Self::Output, ExecInvariantViolation> {
-        // SciPy-equivalent Chebyshev II does not consume `rp`; populate a benign value
-        // so legacy `iirfilter_dyn` validation does not panic in the transition period.
+        // SciPy-equivalent Chebyshev II does not consume `rp`; keep a benign value
+        // for compatibility with legacy argument shape while using checked execution.
         let rp = if matches!(self.ftype, Some(FilterType::ChebyshevII)) {
             self.rp.or(Some(F::one()))
         } else {
             self.rp
         };
 
-        Ok(iirfilter_dyn(
+        iirfilter_checked(
             self.order,
             self.wn.clone(),
             rp,
@@ -359,7 +359,10 @@ where
             self.analog,
             self.output,
             self.fs,
-        ))
+        )
+        .map_err(|_| ExecInvariantViolation::InvalidState {
+            reason: "iirfilter kernel execution failed",
+        })
     }
 }
 
@@ -494,14 +497,17 @@ where
     type Output = DigitalFilter<F>;
 
     fn run_alloc(&self) -> Result<Self::Output, ExecInvariantViolation> {
-        Ok(butter_dyn(
+        butter_checked(
             self.order,
             self.wn.clone(),
             self.btype,
             self.analog,
             self.output,
             self.fs,
-        ))
+        )
+        .map_err(|_| ExecInvariantViolation::InvalidState {
+            reason: "butter kernel execution failed",
+        })
     }
 }
 
@@ -575,7 +581,9 @@ where
         poles: &[Complex<F>],
     ) -> Result<usize, ExecInvariantViolation> {
         validate_relative_degree(zeros, poles)?;
-        Ok(relative_degree_dyn(zeros, poles))
+        relative_degree_checked(zeros, poles).map_err(|_| ExecInvariantViolation::InvalidState {
+            reason: "relative-degree computation failed",
+        })
     }
 }
 
@@ -632,7 +640,9 @@ where
             .tol
             .unwrap_or_else(|| F::epsilon() * F::from(100.0).unwrap());
         validate_conjugate_pairs(&roots, tol, "roots")?;
-        Ok(cplxreal_dyn(roots, self.tol))
+        cplxreal_checked(roots, self.tol).map_err(|_| ExecInvariantViolation::InvalidState {
+            reason: "complex-pair split failed",
+        })
     }
 }
 

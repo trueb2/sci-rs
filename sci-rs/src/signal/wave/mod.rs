@@ -1,3 +1,5 @@
+use crate::kernel::KernelLifecycle;
+use crate::signal::traits::SquareWave1D;
 use nalgebra::RealField;
 use ndarray::{Array, ArrayBase, Data, Dimension, RawData};
 
@@ -55,23 +57,38 @@ pub use kernels::*;
 /// ```
 pub fn square<F, S, D>(t: &ArrayBase<S, D>, duty: F) -> Array<F, D>
 where
-    F: RealField,
+    F: RealField + Copy,
     S: Data<Elem = F>,
     D: Dimension,
 {
-    assert!(F::zero() <= duty && duty <= F::one());
-    let duty_threshold = F::two_pi() * duty;
-    t.mapv(|t| {
-        let x = t % F::two_pi();
-        // Because % is the reminder and not the modulo operator, x can be negative.
-        let x = if x < F::zero() { x + F::two_pi() } else { x };
-        debug_assert!(F::zero() <= x && x <= F::two_pi());
-        if x < duty_threshold {
-            F::one()
-        } else {
-            -F::one()
-        }
-    })
+    #[cfg(feature = "alloc")]
+    {
+        let kernel = SquareWaveKernel::try_new(SquareWaveConfig { duty })
+            .expect("duty must be in [0, 1] for square wave generation");
+        let flat_t = t.iter().copied().collect::<alloc::vec::Vec<_>>();
+        let flat_y = kernel
+            .run_alloc(&flat_t)
+            .expect("square wave generation failed");
+        Array::from_shape_vec(t.raw_dim(), flat_y)
+            .expect("square wave output shape conversion failed")
+    }
+
+    #[cfg(not(feature = "alloc"))]
+    {
+        assert!(F::zero() <= duty && duty <= F::one());
+        let duty_threshold = F::two_pi() * duty;
+        t.mapv(|t| {
+            let x = t % F::two_pi();
+            // Because % is the reminder and not the modulo operator, x can be negative.
+            let x = if x < F::zero() { x + F::two_pi() } else { x };
+            debug_assert!(F::zero() <= x && x <= F::two_pi());
+            if x < duty_threshold {
+                F::one()
+            } else {
+                -F::one()
+            }
+        })
+    }
 }
 
 #[cfg(test)]

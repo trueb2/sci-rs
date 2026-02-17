@@ -2,8 +2,8 @@
 
 use crate::kernel::{ConfigError, ExecInvariantViolation, KernelLifecycle, Read1D, Write1D};
 use crate::signal::traits::{
-    FiltFilt1D, LFilter1D, LFilterZiDesign1D, SavgolFilter1D, SosFilt1D, SosFiltFilt1D,
-    SosFiltZiDesign1D,
+    FiltFilt1D, LFilter1D, LFilterZiDesign1D, SavgolCoeffsDesign, SavgolFilter1D, SosFilt1D,
+    SosFiltFilt1D, SosFiltZiDesign1D,
 };
 use alloc::vec::Vec;
 use core::iter::Sum;
@@ -13,7 +13,7 @@ use ndarray::{Array1, ArrayView1};
 use num_traits::{FromPrimitive, NumAssign, One, Zero};
 
 use super::design::Sos;
-use super::{FiltFilt, FiltFiltPad, LFilter};
+use super::{savgol_coeffs_checked, savgol_filter_checked, FiltFilt, FiltFiltPad, LFilter};
 
 /// Constructor config for [`SosFiltKernel`].
 #[derive(Debug, Clone)]
@@ -68,7 +68,11 @@ where
                 got: out_slice.len(),
             });
         }
-        let y = super::sosfilt_dyn(input.iter(), &mut self.sos);
+        let y = super::sosfilt_checked(input.iter(), &mut self.sos).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "sosfilt kernel execution failed",
+            }
+        })?;
         out_slice.copy_from_slice(&y);
         Ok(())
     }
@@ -78,7 +82,11 @@ where
         I: Read1D<F> + ?Sized,
     {
         let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
-        Ok(super::sosfilt_dyn(input.iter(), &mut self.sos))
+        super::sosfilt_checked(input.iter(), &mut self.sos).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "sosfilt kernel execution failed",
+            }
+        })
     }
 }
 
@@ -419,13 +427,98 @@ where
         I: Read1D<T> + ?Sized,
     {
         let input = input.read_slice().map_err(ExecInvariantViolation::from)?;
-        Ok(super::savgol_filter_dyn(
+        savgol_filter_checked(
             input.iter(),
             self.window_length,
             self.polyorder,
             self.deriv,
             self.delta,
-        ))
+        )
+        .map_err(|_| ExecInvariantViolation::InvalidState {
+            reason: "savgol kernel execution failed",
+        })
+    }
+}
+
+/// Constructor config for [`SavgolCoeffsKernel`].
+#[derive(Debug, Clone)]
+pub struct SavgolCoeffsConfig<T> {
+    /// Odd window length.
+    pub window_length: usize,
+    /// Polynomial order.
+    pub polyorder: usize,
+    /// Derivative order.
+    pub deriv: Option<usize>,
+    /// Sample spacing.
+    pub delta: Option<T>,
+}
+
+/// Trait-first Savitzky-Golay coefficient design kernel.
+#[derive(Debug, Clone)]
+pub struct SavgolCoeffsKernel<T> {
+    window_length: usize,
+    polyorder: usize,
+    deriv: Option<usize>,
+    delta: Option<T>,
+}
+
+impl<T> KernelLifecycle for SavgolCoeffsKernel<T>
+where
+    T: RealField + Copy,
+{
+    type Config = SavgolCoeffsConfig<T>;
+
+    fn try_new(config: Self::Config) -> Result<Self, ConfigError> {
+        if config.window_length == 0 {
+            return Err(ConfigError::InvalidArgument {
+                arg: "window_length",
+                reason: "window_length must be greater than zero",
+            });
+        }
+        if config.polyorder >= config.window_length {
+            return Err(ConfigError::InvalidArgument {
+                arg: "polyorder",
+                reason: "polyorder must be less than window_length",
+            });
+        }
+        Ok(Self {
+            window_length: config.window_length,
+            polyorder: config.polyorder,
+            deriv: config.deriv,
+            delta: config.delta,
+        })
+    }
+}
+
+impl<T> SavgolCoeffsDesign<T> for SavgolCoeffsKernel<T>
+where
+    T: RealField + Copy,
+{
+    fn run_into<O>(&self, out: &mut O) -> Result<(), ExecInvariantViolation>
+    where
+        O: Write1D<T> + ?Sized,
+    {
+        let coeffs = self.run_alloc()?;
+        let out = out
+            .write_slice_mut()
+            .map_err(ExecInvariantViolation::from)?;
+        if out.len() != coeffs.len() {
+            return Err(ExecInvariantViolation::LengthMismatch {
+                arg: "out",
+                expected: coeffs.len(),
+                got: out.len(),
+            });
+        }
+        out.copy_from_slice(&coeffs);
+        Ok(())
+    }
+
+    fn run_alloc(&self) -> Result<Vec<T>, ExecInvariantViolation> {
+        savgol_coeffs_checked(self.window_length, self.polyorder, self.deriv, self.delta).map_err(
+            |_| ExecInvariantViolation::InvalidState {
+                reason: "savgol_coeffs kernel execution failed",
+            },
+        )
     }
 }
 
@@ -495,7 +588,11 @@ where
     }
 
     fn run_alloc(&self) -> Result<Vec<T>, ExecInvariantViolation> {
-        Ok(super::lfilter_zi_dyn(&self.b, &self.a).to_vec())
+        super::lfilter_zi_checked(&self.b, &self.a)
+            .map(|v| v.to_vec())
+            .map_err(|_| ExecInvariantViolation::InvalidState {
+                reason: "lfilter_zi kernel execution failed",
+            })
     }
 }
 
@@ -538,7 +635,11 @@ where
 {
     fn run_alloc(&self) -> Result<Vec<Sos<T>>, ExecInvariantViolation> {
         let mut sos = self.sos.clone();
-        super::sosfilt_zi_dyn::<T, _, Sos<T>>(sos.iter_mut());
+        super::sosfilt_zi_checked::<T, _, Sos<T>>(sos.iter_mut()).map_err(|_| {
+            ExecInvariantViolation::InvalidState {
+                reason: "sosfilt_zi kernel execution failed",
+            }
+        })?;
         Ok(sos)
     }
 }
@@ -548,8 +649,8 @@ mod tests {
     use super::*;
     use crate::kernel::ConfigError;
     use crate::signal::filter::{
-        design::Sos, lfilter_zi_dyn, savgol_filter_dyn, sosfilt_dyn, sosfilt_zi_dyn,
-        sosfiltfilt_dyn, FiltFiltPad,
+        design::Sos, lfilter_zi_checked, savgol_coeffs_checked, savgol_filter_checked, sosfilt_dyn,
+        sosfilt_zi_checked, sosfiltfilt_dyn, FiltFiltPad,
     };
     use ndarray::Array1;
 
@@ -693,7 +794,8 @@ mod tests {
         let input = [2.0f64, 2.0, 5.0, 2.0, 1.0, 0.0, 1.0, 4.0, 9.0];
 
         let actual = kernel.run_alloc(&input).expect("savgol should run");
-        let expected = savgol_filter_dyn(input.iter(), 5, 2, None, None);
+        let expected =
+            savgol_filter_checked(input.iter(), 5, 2, None, None).expect("reference savgol");
         assert_eq!(actual, expected);
 
         let mut too_short = vec![0.0f64; input.len() - 1];
@@ -752,7 +854,7 @@ mod tests {
         })
         .expect("kernel should initialize");
 
-        let expected = lfilter_zi_dyn(&b, &a);
+        let expected = lfilter_zi_checked(&b, &a).expect("reference lfilter_zi");
         let actual = kernel.run_alloc().expect("run_alloc");
         assert_eq!(actual, expected.to_vec());
 
@@ -795,7 +897,7 @@ mod tests {
 
         let actual = kernel.run_alloc().expect("run_alloc");
         let mut expected = sos;
-        sosfilt_zi_dyn::<f64, _, Sos<f64>>(expected.iter_mut());
+        sosfilt_zi_checked::<f64, _, Sos<f64>>(expected.iter_mut()).expect("reference sosfilt_zi");
         assert_eq!(actual.len(), expected.len());
         actual.iter().zip(expected.iter()).for_each(|(a, e)| {
             assert_eq!(a.b, e.b);
@@ -803,5 +905,20 @@ mod tests {
             assert_eq!(a.zi0, e.zi0);
             assert_eq!(a.zi1, e.zi1);
         });
+    }
+
+    #[test]
+    fn savgol_coeffs_kernel_matches_reference() {
+        let kernel = SavgolCoeffsKernel::try_new(SavgolCoeffsConfig {
+            window_length: 5,
+            polyorder: 2,
+            deriv: None,
+            delta: None::<f64>,
+        })
+        .expect("coeff kernel should initialize");
+
+        let actual = kernel.run_alloc().expect("coeff kernel should run");
+        let expected = savgol_coeffs_checked::<f64>(5, 2, None, None).expect("reference coeffs");
+        assert_eq!(actual, expected);
     }
 }

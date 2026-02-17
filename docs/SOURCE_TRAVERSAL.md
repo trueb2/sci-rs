@@ -20,7 +20,7 @@ Status legend:
 | `sci-rs/src/kernel/io.rs` | refactored | adapter traits + tests |
 | `sci-rs/src/kernel/lifecycle.rs` | refactored | constructor lifecycle + tests |
 | `sci-rs/src/linalg/mod.rs` | partial | companion trait path exported |
-| `sci-rs/src/linalg/companion.rs` | refactored | `CompanionKernel` added |
+| `sci-rs/src/linalg/companion.rs` | refactored | `CompanionKernel` + checked companion wrapper path |
 | `sci-rs/src/stats.rs` | partial | trait-first kernels added; free functions retained |
 | `sci-rs/src/special/mod.rs` | support | special-function exports |
 | `sci-rs/src/special/bessel.rs` | support | existing trait surface |
@@ -34,11 +34,11 @@ Status legend:
 
 | File | Status | Notes |
 | --- | --- | --- |
-| `sci-rs/src/signal/mod.rs` | partial | mixed legacy and trait-first exports |
+| `sci-rs/src/signal/mod.rs` | partial | mixed legacy exports with trait-first kernels |
 | `sci-rs/src/signal/traits.rs` | refactored | signal trait-first contract surface |
 | `sci-rs/src/signal/convolve.rs` | refactored | kernel-first + legacy shim routing |
 | `sci-rs/src/signal/resample.rs` | refactored | kernel-first + legacy shim routing |
-| `sci-rs/src/signal/wave/mod.rs` | partial | legacy N-D API with 1D kernel support |
+| `sci-rs/src/signal/wave/mod.rs` | refactored | N-D `square` now routes through square kernel (alloc path) |
 | `sci-rs/src/signal/wave/kernels.rs` | refactored | `SquareWaveKernel` |
 
 ## sci-rs/src/signal/windows
@@ -63,13 +63,13 @@ Status legend:
 | --- | --- | --- |
 | `sci-rs/src/signal/filter/mod.rs` | partial | mixed exports |
 | `sci-rs/src/signal/filter/kernels.rs` | refactored | main filtering kernels and zi/savgol kernels |
-| `sci-rs/src/signal/filter/lfilter.rs` | partial | legacy trait + free function still primary |
-| `sci-rs/src/signal/filter/filtfilt.rs` | partial | legacy trait + free function still primary |
-| `sci-rs/src/signal/filter/sosfilt.rs` | partial | legacy free functions still primary |
+| `sci-rs/src/signal/filter/lfilter.rs` | partial | free-function shim has kernel-first 1D fast path |
+| `sci-rs/src/signal/filter/filtfilt.rs` | partial | added kernel-backed `filtfilt_dyn` compatibility wrapper |
+| `sci-rs/src/signal/filter/sosfilt.rs` | partial | checked wrappers (`sosfilt_checked`, `sosfilt_item_checked`) |
 | `sci-rs/src/signal/filter/sosfiltfilt.rs` | partial | legacy free function still primary |
-| `sci-rs/src/signal/filter/lfilter_zi.rs` | partial | free function retained; kernel wrapper added |
-| `sci-rs/src/signal/filter/sosfilt_zi.rs` | partial | free function retained; kernel wrapper added |
-| `sci-rs/src/signal/filter/savgol_filter.rs` | partial | free functions retained; kernel wrapper added |
+| `sci-rs/src/signal/filter/lfilter_zi.rs` | partial | checked wrapper (`lfilter_zi_checked`) + kernel path |
+| `sci-rs/src/signal/filter/sosfilt_zi.rs` | partial | checked wrapper (`sosfilt_zi_checked`) + kernel path |
+| `sci-rs/src/signal/filter/savgol_filter.rs` | partial | checked wrappers + trait kernels for filter/coeff design |
 | `sci-rs/src/signal/filter/ext.rs` | partial | moved to checked `Result` API for pad/odd extension; no trait kernel yet |
 | `sci-rs/src/signal/filter/arraytools.rs` | partial | checked `AxisSliceKernel`/`AxisReverseKernel` landed; legacy helpers retained |
 
@@ -78,21 +78,21 @@ Status legend:
 | File | Status | Notes |
 | --- | --- | --- |
 | `sci-rs/src/signal/filter/design/mod.rs` | partial | mixed exports + kernel exports |
-| `sci-rs/src/signal/filter/design/kernels.rs` | refactored | trait-first kernels for `firwin/iirfilter/butter` + zpk helpers |
+| `sci-rs/src/signal/filter/design/kernels.rs` | refactored | trait-first kernels for `firwin/iirfilter/butter` + zpk helpers; checked execution routing |
 | `sci-rs/src/signal/filter/design/firwin.rs` | partial | legacy function retained |
-| `sci-rs/src/signal/filter/design/iirfilter.rs` | partial | legacy function retained, panic paths remain |
-| `sci-rs/src/signal/filter/design/butter.rs` | partial | legacy function retained |
+| `sci-rs/src/signal/filter/design/iirfilter.rs` | partial | checked `iirfilter_checked` added; `iirfilter_dyn` is compatibility wrapper |
+| `sci-rs/src/signal/filter/design/butter.rs` | partial | checked `butter_checked` added; `butter_dyn` is compatibility wrapper |
 | `sci-rs/src/signal/filter/design/filter_output.rs` | support | model types |
 | `sci-rs/src/signal/filter/design/filter_type.rs` | support | enum types |
 | `sci-rs/src/signal/filter/design/sos.rs` | support | SOS representation |
 | `sci-rs/src/signal/filter/design/kaiser.rs` | partial | legacy helpers |
 | `sci-rs/src/signal/filter/design/bilinear_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
-| `sci-rs/src/signal/filter/design/cplx.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/cplx.rs` | partial | checked `cplxreal_checked` added; kernel uses checked path |
 | `sci-rs/src/signal/filter/design/lp2bp_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
 | `sci-rs/src/signal/filter/design/lp2bs_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
 | `sci-rs/src/signal/filter/design/lp2hp_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
 | `sci-rs/src/signal/filter/design/lp2lp_zpk.rs` | partial | legacy helper retained; validated kernel wrapper landed |
-| `sci-rs/src/signal/filter/design/relative_degree.rs` | partial | legacy helper retained; validated kernel wrapper landed |
+| `sci-rs/src/signal/filter/design/relative_degree.rs` | partial | checked `relative_degree_checked` added; kernel uses checked path |
 | `sci-rs/src/signal/filter/design/zpk2sos.rs` | partial | legacy helper retained; validated kernel wrapper landed |
 | `sci-rs/src/signal/filter/design/zpk2tf.rs` | partial | legacy helper retained; validated kernel wrapper landed |
 

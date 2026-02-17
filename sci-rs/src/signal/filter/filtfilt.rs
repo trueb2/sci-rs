@@ -3,8 +3,13 @@ use super::arraytools::{
 };
 use super::lfilter::LFilter;
 use super::lfilter_zi::lfilter_zi_dyn;
+use crate::kernel::KernelLifecycle;
+use crate::signal::traits::FiltFilt1D;
 use alloc::{vec, vec::Vec};
-use core::ops::{Add, Sub};
+use core::{
+    borrow::Borrow,
+    ops::{Add, Sub},
+};
 use ndarray::{
     Array, ArrayBase, ArrayView, ArrayView1, Axis, CowArray, Data, Dim, Dimension, Ix, RawData,
     RemoveAxis, SliceArg, SliceInfo, SliceInfoElem,
@@ -194,6 +199,38 @@ where
     };
 
     Ok((edge, ext))
+}
+
+///
+/// Kernel-backed 1D compatibility wrapper for filtfilt.
+///
+pub fn filtfilt_dyn<T, YI>(b: &[T], a: &[T], y: YI, padding: Option<FiltFiltPad>) -> Result<Vec<T>>
+where
+    T: Clone
+        + Add<T, Output = T>
+        + Sub<T, Output = T>
+        + num_traits::One
+        + nalgebra::RealField
+        + Copy
+        + core::iter::Sum,
+    YI: IntoIterator,
+    YI::Item: Borrow<T>,
+{
+    let kernel = super::FiltFiltKernel::try_new(super::FiltFiltConfig {
+        b: b.to_vec(),
+        a: a.to_vec(),
+        axis: Some(0),
+        padding,
+    })
+    .map_err(|_| Error::InvalidArg {
+        arg: "b/a".into(),
+        reason: "Could not initialize filtfilt kernel.".into(),
+    })?;
+    let input = y.into_iter().map(|yi| *yi.borrow()).collect::<Vec<_>>();
+    kernel.run_alloc(&input).map_err(|_| Error::InvalidArg {
+        arg: "x".into(),
+        reason: "filtfilt kernel execution failed.".into(),
+    })
 }
 
 /// Implement filtfilt for fixed dimension of input array `x`.
@@ -420,6 +457,32 @@ mod test {
     use alloc::vec;
     use approx::assert_relative_eq;
     use ndarray::{array, Zip};
+
+    #[test]
+    fn filtfilt_dyn_wrapper_matches_trait_impl() {
+        let b = array![0.5f64, 0.5];
+        let a = array![1.0f64];
+        let x = vec![
+            0.0f64, 0.6389613, 0.890577, 0.9830277, 0.9992535, 0.9756868, 0.9304659, 0.8734051,
+        ];
+        let wrapped = filtfilt_dyn(
+            b.as_slice().unwrap(),
+            a.as_slice().unwrap(),
+            x.iter().copied(),
+            Some(FiltFiltPad::default()),
+        )
+        .expect("wrapper should run");
+        let expected = ndarray::Array1::filtfilt(
+            b.view(),
+            a.view(),
+            ndarray::Array1::from_vec(x),
+            None,
+            Some(FiltFiltPad::default()),
+        )
+        .expect("trait impl should run")
+        .to_vec();
+        assert_eq!(wrapped, expected);
+    }
 
     /// Test odd_ext as from documentation.
     #[test]

@@ -140,14 +140,54 @@ where
         >::zeros(0, 0);
     }
     if coeffs[0] == T::zero() {
-        return Matrix::<
+        Matrix::<
             T,
             Dyn,
             Dyn,
             <DefaultAllocator as allocator::Allocator<Dyn, Dyn>>::Buffer<T>,
-        >::zeros(coeffs.len() - 1, coeffs.len() - 1);
+        >::zeros(coeffs.len() - 1, coeffs.len() - 1)
+    } else {
+        companion_checked_dyn(coeffs.iter().copied(), coeffs.len())
+            .unwrap_or_else(|_| companion_from_slice(&coeffs))
     }
-    companion_from_slice(&coeffs)
+}
+
+///
+/// Checked companion matrix construction from iterator input.
+///
+#[cfg(feature = "alloc")]
+pub fn companion_checked_dyn<T, B, I>(itr: I, m: usize) -> Result<OMatrix<T, Dyn, Dyn>, ConfigError>
+where
+    T: Scalar + One + Zero + Div<Output = T> + Neg<Output = T> + Copy + PartialEq,
+    B: Borrow<T>,
+    I: Iterator<Item = B>,
+    DefaultAllocator: Allocator<Dyn, Dyn>,
+{
+    let coeffs = itr
+        .take(m)
+        .map(|b| *b.borrow())
+        .collect::<alloc::vec::Vec<_>>();
+    if coeffs.len() < 2 {
+        return Err(ConfigError::InvalidArgument {
+            arg: "coeffs",
+            reason: "companion requires at least 2 coefficients",
+        });
+    }
+    if coeffs[0] == T::zero() {
+        return Err(ConfigError::InvalidArgument {
+            arg: "coeffs",
+            reason: "leading coefficient must be non-zero",
+        });
+    }
+    let kernel = CompanionKernel::try_new(CompanionConfig {
+        expected_len: Some(coeffs.len()),
+    })?;
+    kernel
+        .run(&coeffs)
+        .map_err(|_| ConfigError::InvalidArgument {
+            arg: "coeffs",
+            reason: "companion kernel execution failed",
+        })
 }
 
 #[cfg(test)]
@@ -194,5 +234,15 @@ mod tests {
                 reason: "companion requires at least 2 coefficients",
             }
         );
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn companion_checked_dyn_matches_kernel() {
+        let coeffs = [1.0f32, -10.0, 31.0, -30.0];
+        let checked =
+            companion_checked_dyn(coeffs.iter().copied(), coeffs.len()).expect("checked companion");
+        let legacy = companion_dyn(coeffs.iter().copied(), coeffs.len());
+        assert_eq!(checked, legacy);
     }
 }

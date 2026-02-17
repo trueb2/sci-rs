@@ -3,6 +3,10 @@ use nalgebra::{Complex, ComplexField, RealField};
 use num_traits::Float;
 
 #[cfg(feature = "alloc")]
+use crate::error::Error;
+#[cfg(feature = "alloc")]
+use crate::signal::traits::ComplexSplit;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 #[cfg(feature = "alloc")]
@@ -53,19 +57,32 @@ pub fn cplxreal_dyn<F>(z: Vec<Complex<F>>, tol: Option<F>) -> (Vec<Complex<F>>, 
 where
     F: RealField + Float,
 {
+    cplxreal_checked(z, tol).expect("invalid complex root pairing")
+}
+
+/// Checked complex-pair splitting helper used by trait-first kernels.
+#[cfg(feature = "alloc")]
+pub fn cplxreal_checked<F>(z: Vec<Complex<F>>, tol: Option<F>) -> Result<ComplexSplit<F>, Error>
+where
+    F: RealField + Float,
+{
     if z.is_empty() {
-        return (Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
 
     // Get tolerance from dtype of input
     let tol = tol.unwrap_or_else(|| F::epsilon() * F::from(100.).unwrap());
 
     let mut z = z;
-    z.sort_unstable_by(|a, b| match a.re.partial_cmp(&b.re).unwrap() {
-        Ordering::Less => Ordering::Less,
-        Ordering::Greater => Ordering::Greater,
-        Ordering::Equal => Float::abs(a.im).partial_cmp(&Float::abs(b.im)).unwrap(),
-    });
+    z.sort_unstable_by(
+        |a, b| match a.re.partial_cmp(&b.re).unwrap_or(Ordering::Equal) {
+            Ordering::Less => Ordering::Less,
+            Ordering::Greater => Ordering::Greater,
+            Ordering::Equal => Float::abs(a.im)
+                .partial_cmp(&Float::abs(b.im))
+                .unwrap_or(Ordering::Equal),
+        },
+    );
 
     // Split reals from conjugate pairs
     let (zr, zc): (Vec<_>, Vec<_>) = z
@@ -74,14 +91,17 @@ where
 
     if zr.len() == z.len() {
         // Input is entirely real
-        return (Vec::new(), zr);
+        return Ok((Vec::new(), zr));
     }
 
     // Split positive and negative halves of conjugates
     let mut zp: Vec<Complex<F>> = zc.iter().filter(|zi| zi.im > F::zero()).cloned().collect();
     let mut zn: Vec<Complex<F>> = zc.iter().filter(|zi| zi.im < F::zero()).cloned().collect();
     if zp.len() != zn.len() {
-        panic!("Array contains complex value with no matching conjugate");
+        return Err(Error::InvalidArg {
+            arg: "z".into(),
+            reason: "array contains complex value with no matching conjugate".into(),
+        });
     }
 
     // Find runs of (approximately) the same real part
@@ -130,10 +150,13 @@ where
             .zip(zn[start..stop].iter().cloned())
             .collect();
         chunk.sort_unstable_by(|a, b| {
-            match Float::abs(a.1.im).partial_cmp(&Float::abs(b.1.im)).unwrap() {
+            match Float::abs(a.1.im)
+                .partial_cmp(&Float::abs(b.1.im))
+                .unwrap_or(Ordering::Equal)
+            {
                 Ordering::Less => Ordering::Less,
                 Ordering::Greater => Ordering::Greater,
-                Ordering::Equal => a.0.im.partial_cmp(&b.0.im).unwrap(),
+                Ordering::Equal => a.0.im.partial_cmp(&b.0.im).unwrap_or(Ordering::Equal),
             }
         });
         zp[start..stop]
@@ -152,7 +175,10 @@ where
         .zip(zn.iter())
         .any(|(zpi, zni)| (zpi - zni.conj()).abs() > tol * zni.abs())
     {
-        panic!("Array contains complex value with no matching conjugate");
+        return Err(Error::InvalidArg {
+            arg: "z".into(),
+            reason: "array contains complex value with no matching conjugate".into(),
+        });
     }
 
     // Average out numerical inaccuracy in real vs imag parts of pairs
@@ -162,7 +188,7 @@ where
         .map(|(zpi, zni)| (zpi + zni.conj()) / F::from(2.).unwrap())
         .collect();
 
-    (zc, zr)
+    Ok((zc, zr))
 }
 
 #[cfg(feature = "alloc")]

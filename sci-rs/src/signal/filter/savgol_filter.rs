@@ -6,6 +6,7 @@ use core::{
 use nalgebra as na;
 use nalgebra::RealField;
 use num_traits::Float;
+use sci_rs_core::{Error, Result};
 
 #[cfg(feature = "alloc")]
 use alloc::vec;
@@ -32,18 +33,41 @@ where
     YI: Iterator,
     YI::Item: Borrow<F>,
 {
-    if window_length.is_multiple_of(2) {
-        panic!("window_length must be odd")
+    savgol_filter_checked(y, window_length, polyorder, deriv, delta)
+        .expect("invalid savgol_filter configuration")
+}
+
+///
+/// Checked Savitzky-Golay filtering entrypoint.
+///
+/// This is the refactor-safe path used by trait-first kernels.
+pub fn savgol_filter_checked<YI, F>(
+    y: YI,
+    window_length: usize,
+    polyorder: usize,
+    deriv: Option<usize>,
+    delta: Option<F>,
+) -> Result<Vec<F>>
+where
+    F: RealField + Copy + Sum,
+    YI: Iterator,
+    YI::Item: Borrow<F>,
+{
+    if window_length == 0 || window_length.is_multiple_of(2) {
+        return Err(Error::InvalidArg {
+            arg: "window_length".into(),
+            reason: "window_length must be odd and greater than zero.".into(),
+        });
     }
 
     if window_length < polyorder + 2 {
-        panic!("window_length is too small for the polynomials order")
+        return Err(Error::InvalidArg {
+            arg: "window_length/polyorder".into(),
+            reason: "window_length is too small for the polynomial order.".into(),
+        });
     }
 
-    let mut fir = savgol_coeffs_dyn::<F>(window_length, polyorder, deriv, delta)
-        .into_iter()
-        .collect::<Vec<_>>();
-
+    let mut fir = savgol_coeffs_checked::<F>(window_length, polyorder, deriv, delta)?;
     fir.reverse();
 
     // Pad with nearest edge value
@@ -51,12 +75,12 @@ where
     let mut data = Vec::with_capacity(size_hint.1.unwrap_or(size_hint.0));
     let mut y = y;
     let Some(nearest) = y.next() else {
-        return vec![];
+        return Ok(vec![]);
     };
     let nearest = *nearest.borrow();
     data.extend((0..(window_length / 2 + 1)).map(|_| nearest));
     data.extend(y.map(|yi| *yi.borrow()));
-    let nearest = *data.last().unwrap();
+    let nearest = *data.last().unwrap_or(&nearest);
     data.extend((0..window_length / 2).map(|_| nearest));
 
     // Convolve the data with the FIR coefficients
@@ -65,7 +89,7 @@ where
         .map(|w| w.iter().zip(fir.iter()).map(|(a, b)| *a * *b).sum::<F>())
         .collect();
 
-    rslt
+    Ok(rslt)
 }
 
 ///
@@ -85,8 +109,33 @@ pub fn savgol_coeffs_dyn<F>(
 where
     F: RealField + Copy,
 {
+    savgol_coeffs_checked(window_length, polyorder, deriv, delta)
+        .expect("invalid savgol_coeffs configuration")
+}
+
+///
+/// Checked Savitzky-Golay coefficient design entrypoint.
+///
+pub fn savgol_coeffs_checked<F>(
+    window_length: usize,
+    polyorder: usize,
+    deriv: Option<usize>,
+    delta: Option<F>,
+) -> Result<Vec<F>>
+where
+    F: RealField + Copy,
+{
+    if window_length == 0 {
+        return Err(Error::InvalidArg {
+            arg: "window_length".into(),
+            reason: "window_length must be greater than zero.".into(),
+        });
+    }
     if polyorder >= window_length {
-        panic!("polyorder must be less than window_length")
+        return Err(Error::InvalidArg {
+            arg: "polyorder".into(),
+            reason: "polyorder must be less than window_length.".into(),
+        });
     }
 
     let half_window = F::from_usize(window_length / 2).unwrap();
@@ -95,7 +144,7 @@ where
     let pos = if rem == 0 {
         let f = F::from_f32(0.5).unwrap();
         (0..window_length)
-            .map(|i| (half_window - F::from_usize(i).unwrap() - f))
+            .map(|i| half_window - F::from_usize(i).unwrap() - f)
             .collect::<Vec<_>>()
     } else {
         (0..window_length)
@@ -103,13 +152,12 @@ where
             .collect::<Vec<_>>()
     };
 
-    //handle the case of default args
+    // handle the case of default args
     let der = deriv.unwrap_or(0);
     let del = delta.unwrap_or(F::one());
 
     if der > polyorder {
-        let mut ret = vec![F::zero(); window_length];
-        return ret;
+        return Ok(vec![F::zero(); window_length]);
     }
 
     // Columns are 2m+1 integer positions centered on 0
@@ -129,11 +177,15 @@ where
             },
         );
 
-    y[der] = (F::from_usize(factorial(der)).unwrap()) / del.powi(der as i32);
+    y[der] = F::from_usize(factorial(der)).unwrap() / del.powi(der as i32);
 
     // Solve the system for the Savitsky-Golay FIR coefficients
-    let solve = lstsq::lstsq(&A, &y, F::from_f32(1e-9).unwrap()).unwrap();
-    solve.solution.data.into()
+    let solve =
+        lstsq::lstsq(&A, &y, F::from_f32(1e-9).unwrap()).map_err(|_| Error::InvalidArg {
+            arg: "window_length/polyorder".into(),
+            reason: "least-squares solve failed for savgol coefficients.".into(),
+        })?;
+    Ok(solve.solution.data.into())
 }
 
 fn factorial(n: usize) -> usize {
