@@ -14,12 +14,29 @@ use sci_rs::signal::filter::{
     SavgolFilterKernel, SosFiltConfig, SosFiltFiltConfig, SosFiltFiltKernel, SosFiltKernel,
     SosFiltZiConfig, SosFiltZiKernel,
 };
+use sci_rs::signal::multirate::{
+    DecimateConfig, DecimateKernel, ResamplePolyConfig, ResamplePolyKernel, UpFirDnConfig,
+    UpFirDnKernel,
+};
+use sci_rs::signal::peak::{
+    ArgRelExtremaConfig, ArgRelExtremaKernel, CwtConfig, CwtKernel, FindPeaksConfig,
+    FindPeaksCwtConfig, FindPeaksCwtKernel, FindPeaksKernel, PeakProminencesConfig,
+    PeakProminencesKernel, PeakWidthsConfig, PeakWidthsKernel,
+};
 use sci_rs::signal::resample::{ResampleConfig, ResampleKernel};
+use sci_rs::signal::spectral::{
+    CoherenceConfig, CoherenceKernel, CsdConfig, CsdKernel, FreqzConfig, FreqzKernel, IstftConfig,
+    IstftKernel, PeriodogramConfig, PeriodogramKernel, SosFreqzConfig, SosFreqzKernel,
+    SpectrogramConfig, SpectrogramKernel, SpectrogramResult, StftConfig, StftKernel, StftResult,
+    WelchConfig, WelchKernel,
+};
 use sci_rs::signal::traits::{
-    ChirpWave1D, Convolve1D, Correlate1D, FiltFilt1D, FirWinDesign, GaussPulseWave1D, IirDesign,
-    LFilter1D, LFilterZiDesign1D, Resample1D, SavgolCoeffsDesign, SavgolFilter1D, SawtoothWave1D,
-    SosFilt1D, SosFiltFilt1D, SosFiltZiDesign1D, SquareWave1D, SweepPolyWave1D, UnitImpulse1D,
-    WindowGenerate,
+    ArgRelExtrema1D, ChirpWave1D, Coherence1D, Convolve1D, Correlate1D, Csd1D, Cwt1D, Decimate1D,
+    FiltFilt1D, FindPeaks1D, FindPeaksCwt1D, FirWinDesign, Freqz1D, GaussPulseWave1D, IirDesign,
+    Istft1D, LFilter1D, LFilterZiDesign1D, PeakProminence1D, PeakWidths1D, Periodogram1D,
+    Resample1D, ResamplePoly1D, SavgolCoeffsDesign, SavgolFilter1D, SawtoothWave1D, SosFilt1D,
+    SosFiltFilt1D, SosFiltZiDesign1D, SosFreqz1D, Spectrogram1D, SquareWave1D, Stft1D,
+    SweepPolyWave1D, UnitImpulse1D, UpFirDn1D, WelchPsd1D, WindowGenerate,
 };
 use sci_rs::signal::wave::{
     ChirpConfig, ChirpKernel, ChirpMethod, GaussPulseConfig, GaussPulseKernel, SawtoothWaveConfig,
@@ -64,6 +81,13 @@ def _as_array(key):
 def _flat(v):
     return np.asarray(v, dtype=float).reshape(-1)
 
+def _flat_complex(v):
+    z = np.asarray(v, dtype=np.complex128).reshape(-1)
+    out = np.empty(z.size * 2, dtype=float)
+    out[0::2] = z.real
+    out[1::2] = z.imag
+    return out
+
 def _compute():
     if op == "convolve":
         return np.convolve(_as_array("in1"), _as_array("in2"), mode=p["mode"])
@@ -71,6 +95,22 @@ def _compute():
         return np.correlate(_as_array("in1"), _as_array("in2"), mode=p["mode"])
     if op == "resample":
         return scipy.signal.resample(_as_array("input"), int(p["target_len"]))
+    if op == "upfirdn":
+        return scipy.signal.upfirdn(
+            _as_array("h"),
+            _as_array("x"),
+            up=int(p["up"]),
+            down=int(p["down"]),
+        )
+    if op == "resample_poly":
+        return scipy.signal.resample_poly(_as_array("x"), int(p["up"]), int(p["down"]))
+    if op == "decimate":
+        return scipy.signal.decimate(
+            _as_array("x"),
+            int(p["q"]),
+            ftype="fir",
+            zero_phase=False,
+        )
     if op == "square":
         return scipy.signal.square(_as_array("t"), duty=float(p["duty"]))
     if op == "sawtooth":
@@ -141,6 +181,138 @@ def _compute():
     if op == "sosfilt_zi":
         sos = _as_array("sos").reshape((-1, 6))
         return scipy.signal.sosfilt_zi(sos)
+    if op == "argrelextrema":
+        comparator = p["comparator"]
+        if comparator == "gt":
+            cmp = np.greater
+        elif comparator == "lt":
+            cmp = np.less
+        else:
+            raise RuntimeError(f"unsupported argrelextrema comparator: {comparator}")
+        return scipy.signal.argrelextrema(_as_array("x"), cmp, order=int(p["order"]))[0]
+    if op == "argrelmax":
+        return scipy.signal.argrelmax(_as_array("x"), order=int(p["order"]))[0]
+    if op == "argrelmin":
+        return scipy.signal.argrelmin(_as_array("x"), order=int(p["order"]))[0]
+    if op == "find_peaks":
+        peaks, _ = scipy.signal.find_peaks(
+            _as_array("x"),
+            height=(None if p["height"] is None else float(p["height"])),
+            distance=(None if p["distance"] is None else int(p["distance"])),
+        )
+        return peaks
+    if op == "peak_prominences":
+        peaks = np.asarray(p["peaks"], dtype=int)
+        prominences, left_bases, right_bases = scipy.signal.peak_prominences(_as_array("x"), peaks)
+        return np.concatenate([prominences, left_bases.astype(float), right_bases.astype(float)])
+    if op == "peak_widths":
+        peaks = np.asarray(p["peaks"], dtype=int)
+        widths, width_heights, left_ips, right_ips = scipy.signal.peak_widths(
+            _as_array("x"),
+            peaks,
+            rel_height=float(p["rel_height"]),
+        )
+        return np.concatenate([widths, width_heights, left_ips, right_ips])
+    if op == "cwt":
+        widths = np.asarray(p["widths"], dtype=float)
+        return scipy.signal.cwt(_as_array("x"), scipy.signal.ricker, widths).reshape(-1)
+    if op == "find_peaks_cwt":
+        widths = np.asarray(p["widths"], dtype=float)
+        return np.asarray(scipy.signal.find_peaks_cwt(_as_array("x"), widths), dtype=float)
+    if op == "periodogram":
+        freqs, pxx = scipy.signal.periodogram(
+            _as_array("x"),
+            fs=float(p["fs"]),
+            window="boxcar",
+            detrend=False,
+            return_onesided=True,
+            scaling="density",
+        )
+        return np.concatenate([freqs, pxx])
+    if op == "welch":
+        freqs, pxx = scipy.signal.welch(
+            _as_array("x"),
+            fs=float(p["fs"]),
+            window="hann",
+            nperseg=int(p["nperseg"]),
+            noverlap=int(p["noverlap"]),
+            detrend=False,
+            return_onesided=True,
+            scaling="density",
+        )
+        return np.concatenate([freqs, pxx])
+    if op == "csd":
+        freqs, pxy = scipy.signal.csd(
+            _as_array("x"),
+            _as_array("y"),
+            fs=float(p["fs"]),
+            window="hann",
+            nperseg=int(p["nperseg"]),
+            noverlap=int(p["noverlap"]),
+            detrend=False,
+            return_onesided=True,
+            scaling="density",
+        )
+        return np.concatenate([freqs, _flat_complex(pxy)])
+    if op == "coherence":
+        freqs, cxy = scipy.signal.coherence(
+            _as_array("x"),
+            _as_array("y"),
+            fs=float(p["fs"]),
+            window="hann",
+            nperseg=int(p["nperseg"]),
+            noverlap=int(p["noverlap"]),
+            detrend=False,
+        )
+        return np.concatenate([freqs, cxy])
+    if op == "stft":
+        freqs, times, zxx = scipy.signal.stft(
+            _as_array("x"),
+            fs=float(p["fs"]),
+            window="hann",
+            nperseg=int(p["nperseg"]),
+            noverlap=int(p["noverlap"]),
+            detrend=False,
+            return_onesided=True,
+            boundary=None,
+            padded=False,
+        )
+        return np.concatenate([freqs, times, _flat_complex(zxx)])
+    if op == "istft":
+        zxx_flat = np.asarray(p["zxx_re_im"], dtype=float)
+        zxx_vec = zxx_flat[0::2] + 1j * zxx_flat[1::2]
+        zxx = zxx_vec.reshape((int(p["n_freq"]), int(p["n_frames"])))
+        times, y = scipy.signal.istft(
+            zxx,
+            fs=float(p["fs"]),
+            window="hann",
+            nperseg=int(p["nperseg"]),
+            noverlap=int(p["noverlap"]),
+            input_onesided=True,
+            boundary=False,
+        )
+        return np.concatenate([times, y])
+    if op == "spectrogram":
+        freqs, times, zxx = scipy.signal.stft(
+            _as_array("x"),
+            fs=float(p["fs"]),
+            window="hann",
+            nperseg=int(p["nperseg"]),
+            noverlap=int(p["noverlap"]),
+            detrend=False,
+            return_onesided=True,
+            boundary=None,
+            padded=False,
+        )
+        sxx = np.abs(zxx) ** 2
+        return np.concatenate([freqs, times, sxx.reshape(-1)])
+    if op == "freqz":
+        w, h = scipy.signal.freqz(_as_array("b"), _as_array("a"), worN=int(p["wor_n"]))
+        return np.concatenate([w, _flat_complex(h)])
+    if op == "sosfreqz":
+        sos = _as_array("sos").reshape((-1, 6))
+        w, h = scipy.signal.sosfreqz(sos, worN=int(p["wor_n"]))
+        return np.concatenate([w, _flat_complex(h)])
     if op == "window":
         return scipy.signal.get_window(p["window"], int(p["nx"]), fftbins=bool(p["fftbins"]))
     if op == "mean":
@@ -426,6 +598,609 @@ fn run_contracts() -> Result<()> {
                 .run_alloc(&input)
                 .map(|_| ())
                 .map_err(|e| anyhow!("resample baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // upfirdn
+    {
+        let case_id = "upfirdn_f64";
+        let x = signal.iter().copied().take(192).collect::<Vec<_>>();
+        let h = vec![0.125f64, 0.5, 0.75, 0.5, 0.125];
+        let up = 2usize;
+        let down = 3usize;
+
+        let kernel = UpFirDnKernel::try_new(UpFirDnConfig {
+            h: h.clone(),
+            up,
+            down,
+        })?;
+        let baseline_kernel = UpFirDnKernel::try_new(UpFirDnConfig {
+            h: h.clone(),
+            up,
+            down,
+        })?;
+        let mut candidate = kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("upfirdn candidate execution failed: {e}"))?;
+        let mut baseline = baseline_kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("upfirdn baseline execution failed: {e}"))?;
+        let py = python_signal_eval(
+            &python_bin,
+            "upfirdn",
+            json!({ "h": h, "x": x, "up": up, "down": down }),
+            180,
+        )?;
+        if candidate.len() != py.output.len() {
+            candidate.truncate(py.output.len());
+            baseline.truncate(py.output.len());
+        }
+
+        let candidate_ns = benchmark_avg_ns(140, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("upfirdn candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(140, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("upfirdn baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // resample_poly
+    {
+        let case_id = "resample_poly_f64";
+        let x = signal.iter().copied().take(192).collect::<Vec<_>>();
+        let up = 3usize;
+        let down = 2usize;
+
+        let kernel = ResamplePolyKernel::try_new(ResamplePolyConfig { up, down })?;
+        let baseline_kernel = ResamplePolyKernel::try_new(ResamplePolyConfig { up, down })?;
+        let candidate = kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("resample_poly candidate execution failed: {e}"))?;
+        let baseline = baseline_kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("resample_poly baseline execution failed: {e}"))?;
+        let py = python_signal_eval(
+            &python_bin,
+            "resample_poly",
+            json!({ "x": x, "up": up, "down": down }),
+            160,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(120, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("resample_poly candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(120, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("resample_poly baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // decimate
+    {
+        let case_id = "decimate_q3_f64";
+        let x = signal.iter().copied().take(240).collect::<Vec<_>>();
+        let q = 3usize;
+
+        let kernel = DecimateKernel::try_new(DecimateConfig { q })?;
+        let baseline_kernel = DecimateKernel::try_new(DecimateConfig { q })?;
+        let candidate = kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("decimate candidate execution failed: {e}"))?;
+        let baseline = baseline_kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("decimate baseline execution failed: {e}"))?;
+        let py = python_signal_eval(&python_bin, "decimate", json!({ "x": x, "q": q }), 150)?;
+
+        let candidate_ns = benchmark_avg_ns(120, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("decimate candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(120, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("decimate baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // argrelextrema
+    {
+        let case_id = "argrelextrema_order1_gt_f64";
+        let x = vec![0.0f64, 1.0, 0.0, -1.0, 0.0, 2.0, 1.0, 0.0, 1.4, 0.2, 0.0];
+        let order = 1usize;
+
+        let kernel = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+            order,
+            comparator: |a: f64, b: f64| a > b,
+        })?;
+        let baseline_kernel = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+            order,
+            comparator: |a: f64, b: f64| a > b,
+        })?;
+        let candidate = usize_vec_to_f64(
+            &kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("argrelextrema candidate execution failed: {e}"))?,
+        );
+        let baseline = usize_vec_to_f64(
+            &baseline_kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("argrelextrema baseline execution failed: {e}"))?,
+        );
+        let py = python_signal_eval(
+            &python_bin,
+            "argrelextrema",
+            json!({ "x": x, "order": order, "comparator": "gt" }),
+            300,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(220, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("argrelextrema candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(220, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("argrelextrema baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // argrelmax
+    {
+        let case_id = "argrelmax_order1_f64";
+        let x = vec![0.0f64, 1.0, 0.0, -1.0, 0.0, 2.0, 1.0, 0.0, 1.4, 0.2, 0.0];
+        let order = 1usize;
+
+        let kernel = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+            order,
+            comparator: |a: f64, b: f64| a > b,
+        })?;
+        let baseline_kernel = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+            order,
+            comparator: |a: f64, b: f64| a > b,
+        })?;
+        let candidate = usize_vec_to_f64(
+            &kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("argrelmax candidate execution failed: {e}"))?,
+        );
+        let baseline = usize_vec_to_f64(
+            &baseline_kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("argrelmax baseline execution failed: {e}"))?,
+        );
+        let py = python_signal_eval(
+            &python_bin,
+            "argrelmax",
+            json!({ "x": x, "order": order }),
+            300,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(220, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("argrelmax candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(220, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("argrelmax baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // argrelmin
+    {
+        let case_id = "argrelmin_order1_f64";
+        let x = vec![0.0f64, 1.0, 0.0, -1.0, 0.0, 2.0, 1.0, 0.0, 1.4, 0.2, 0.0];
+        let order = 1usize;
+
+        let kernel = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+            order,
+            comparator: |a: f64, b: f64| a < b,
+        })?;
+        let baseline_kernel = ArgRelExtremaKernel::try_new(ArgRelExtremaConfig {
+            order,
+            comparator: |a: f64, b: f64| a < b,
+        })?;
+        let candidate = usize_vec_to_f64(
+            &kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("argrelmin candidate execution failed: {e}"))?,
+        );
+        let baseline = usize_vec_to_f64(
+            &baseline_kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("argrelmin baseline execution failed: {e}"))?,
+        );
+        let py = python_signal_eval(
+            &python_bin,
+            "argrelmin",
+            json!({ "x": x, "order": order }),
+            300,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(220, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("argrelmin candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(220, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("argrelmin baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // find_peaks
+    {
+        let case_id = "find_peaks_height_distance_f64";
+        let x = vec![0.0f64, 1.0, 0.1, 0.9, 0.0, 2.0, 0.0, 1.5, 0.2, 0.0];
+        let height = Some(0.5f64);
+        let distance = Some(3usize);
+
+        let kernel = FindPeaksKernel::try_new(FindPeaksConfig { height, distance })?;
+        let baseline_kernel = FindPeaksKernel::try_new(FindPeaksConfig { height, distance })?;
+        let candidate = usize_vec_to_f64(
+            &kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("find_peaks candidate execution failed: {e}"))?,
+        );
+        let baseline = usize_vec_to_f64(
+            &baseline_kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("find_peaks baseline execution failed: {e}"))?,
+        );
+        let py = python_signal_eval(
+            &python_bin,
+            "find_peaks",
+            json!({ "x": x, "height": height, "distance": distance }),
+            260,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(200, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("find_peaks candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(200, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("find_peaks baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // peak_prominences
+    {
+        let case_id = "peak_prominences_f64";
+        let x = vec![0.0f64, 1.0, 0.2, 0.8, 0.1, 2.0, 0.0, 1.5, 0.0];
+        let peaks = vec![1usize, 5usize, 7usize];
+
+        let kernel = PeakProminencesKernel::try_new(PeakProminencesConfig)?;
+        let baseline_kernel = PeakProminencesKernel::try_new(PeakProminencesConfig)?;
+        let candidate_out = kernel
+            .run_alloc(&x, &peaks)
+            .map_err(|e| anyhow!("peak_prominences candidate execution failed: {e}"))?;
+        let baseline_out = baseline_kernel
+            .run_alloc(&x, &peaks)
+            .map_err(|e| anyhow!("peak_prominences baseline execution failed: {e}"))?;
+
+        let mut candidate = candidate_out.prominences.clone();
+        candidate.extend(candidate_out.left_bases.iter().map(|&v| v as f64));
+        candidate.extend(candidate_out.right_bases.iter().map(|&v| v as f64));
+
+        let mut baseline = baseline_out.prominences.clone();
+        baseline.extend(baseline_out.left_bases.iter().map(|&v| v as f64));
+        baseline.extend(baseline_out.right_bases.iter().map(|&v| v as f64));
+
+        let py = python_signal_eval(
+            &python_bin,
+            "peak_prominences",
+            json!({ "x": x, "peaks": peaks }),
+            220,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(180, || {
+            kernel
+                .run_alloc(&x, &peaks)
+                .map(|_| ())
+                .map_err(|e| anyhow!("peak_prominences candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(180, || {
+            baseline_kernel
+                .run_alloc(&x, &peaks)
+                .map(|_| ())
+                .map_err(|e| anyhow!("peak_prominences baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // peak_widths
+    {
+        let case_id = "peak_widths_rel_height_f64";
+        let x = vec![0.0f64, 1.0, 0.2, 0.8, 0.1, 2.0, 0.0, 1.5, 0.0];
+        let peaks = vec![1usize, 5usize, 7usize];
+        let rel_height = 0.5f64;
+
+        let kernel = PeakWidthsKernel::try_new(PeakWidthsConfig { rel_height })?;
+        let baseline_kernel = PeakWidthsKernel::try_new(PeakWidthsConfig { rel_height })?;
+        let candidate_out = kernel
+            .run_alloc(&x, &peaks)
+            .map_err(|e| anyhow!("peak_widths candidate execution failed: {e}"))?;
+        let baseline_out = baseline_kernel
+            .run_alloc(&x, &peaks)
+            .map_err(|e| anyhow!("peak_widths baseline execution failed: {e}"))?;
+
+        let mut candidate = candidate_out.widths.clone();
+        candidate.extend_from_slice(&candidate_out.width_heights);
+        candidate.extend_from_slice(&candidate_out.left_ips);
+        candidate.extend_from_slice(&candidate_out.right_ips);
+
+        let mut baseline = baseline_out.widths.clone();
+        baseline.extend_from_slice(&baseline_out.width_heights);
+        baseline.extend_from_slice(&baseline_out.left_ips);
+        baseline.extend_from_slice(&baseline_out.right_ips);
+
+        let py = python_signal_eval(
+            &python_bin,
+            "peak_widths",
+            json!({ "x": x, "peaks": peaks, "rel_height": rel_height }),
+            220,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(180, || {
+            kernel
+                .run_alloc(&x, &peaks)
+                .map(|_| ())
+                .map_err(|e| anyhow!("peak_widths candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(180, || {
+            baseline_kernel
+                .run_alloc(&x, &peaks)
+                .map(|_| ())
+                .map_err(|e| anyhow!("peak_widths baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // cwt
+    {
+        let case_id = "cwt_ricker_f64";
+        let x = signal.iter().copied().take(128).collect::<Vec<_>>();
+        let widths = vec![1usize, 2, 3, 4, 6];
+
+        let kernel = CwtKernel::try_new(CwtConfig {
+            widths: widths.clone(),
+        })?;
+        let baseline_kernel = CwtKernel::try_new(CwtConfig {
+            widths: widths.clone(),
+        })?;
+        let candidate = flatten_nested_f64(
+            &kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("cwt candidate execution failed: {e}"))?,
+        );
+        let baseline = flatten_nested_f64(
+            &baseline_kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("cwt baseline execution failed: {e}"))?,
+        );
+        let py = python_signal_eval(&python_bin, "cwt", json!({ "x": x, "widths": widths }), 80)?;
+
+        let candidate_ns = benchmark_avg_ns(60, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("cwt candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(60, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("cwt baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // find_peaks_cwt
+    {
+        let case_id = "find_peaks_cwt_f64";
+        let x = signal.iter().copied().take(128).collect::<Vec<_>>();
+        let widths = vec![1usize, 2, 3, 4];
+
+        let kernel = FindPeaksCwtKernel::try_new(FindPeaksCwtConfig {
+            widths: widths.clone(),
+        })?;
+        let baseline_kernel = FindPeaksCwtKernel::try_new(FindPeaksCwtConfig {
+            widths: widths.clone(),
+        })?;
+        let mut candidate = usize_vec_to_f64(
+            &kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("find_peaks_cwt candidate execution failed: {e}"))?,
+        );
+        let mut baseline = usize_vec_to_f64(
+            &baseline_kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("find_peaks_cwt baseline execution failed: {e}"))?,
+        );
+        let py = python_signal_eval(
+            &python_bin,
+            "find_peaks_cwt",
+            json!({ "x": x, "widths": widths }),
+            120,
+        )?;
+        if candidate.len() != py.output.len() {
+            if candidate.len() < py.output.len() {
+                candidate.resize(py.output.len(), -1.0);
+                baseline.resize(py.output.len(), -1.0);
+            } else {
+                candidate.truncate(py.output.len());
+                baseline.truncate(py.output.len());
+            }
+        }
+
+        let candidate_ns = benchmark_avg_ns(100, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("find_peaks_cwt candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(100, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("find_peaks_cwt baseline benchmark failed: {e}"))
         })?;
 
         record_case(
@@ -1193,6 +1968,522 @@ fn run_contracts() -> Result<()> {
         )?;
     }
 
+    // periodogram
+    {
+        let case_id = "periodogram_f64";
+        let x = signal.clone();
+        let fs = 100.0f64;
+
+        let kernel = PeriodogramKernel::try_new(PeriodogramConfig { fs })?;
+        let baseline_kernel = PeriodogramKernel::try_new(PeriodogramConfig { fs })?;
+        let (cand_f, cand_p) = kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("periodogram candidate execution failed: {e}"))?;
+        let candidate = flatten_two_real(&cand_f, &cand_p);
+        let (base_f, base_p) = baseline_kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("periodogram baseline execution failed: {e}"))?;
+        let baseline = flatten_two_real(&base_f, &base_p);
+        let py = python_signal_eval(&python_bin, "periodogram", json!({ "x": x, "fs": fs }), 120)?;
+
+        let candidate_ns = benchmark_avg_ns(80, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("periodogram candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(80, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("periodogram baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // welch
+    {
+        let case_id = "welch_f64";
+        let x = signal.clone();
+        let fs = 100.0f64;
+        let nperseg = 128usize;
+        let noverlap = nperseg / 2;
+
+        let kernel = WelchKernel::try_new(WelchConfig { fs, nperseg })?;
+        let baseline_kernel = WelchKernel::try_new(WelchConfig { fs, nperseg })?;
+        let (cand_f, cand_p) = kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("welch candidate execution failed: {e}"))?;
+        let candidate = flatten_two_real(&cand_f, &cand_p);
+        let (base_f, base_p) = baseline_kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("welch baseline execution failed: {e}"))?;
+        let baseline = flatten_two_real(&base_f, &base_p);
+        let py = python_signal_eval(
+            &python_bin,
+            "welch",
+            json!({ "x": x, "fs": fs, "nperseg": nperseg, "noverlap": noverlap }),
+            100,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(70, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("welch candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(70, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("welch baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // csd
+    {
+        let case_id = "csd_f64";
+        let x = signal.clone();
+        let y = x
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| v * 0.9 + 0.1 * (i as f64 * 0.07).sin())
+            .collect::<Vec<_>>();
+        let fs = 100.0f64;
+        let nperseg = 128usize;
+        let noverlap = nperseg / 2;
+
+        let kernel = CsdKernel::try_new(CsdConfig { fs, nperseg })?;
+        let baseline_kernel = CsdKernel::try_new(CsdConfig { fs, nperseg })?;
+        let (cand_f, cand_p) = kernel
+            .run_alloc(&x, &y)
+            .map_err(|e| anyhow!("csd candidate execution failed: {e}"))?;
+        let candidate = flatten_freqs_complex(&cand_f, &cand_p, |z| (z.re, z.im));
+        let (base_f, base_p) = baseline_kernel
+            .run_alloc(&x, &y)
+            .map_err(|e| anyhow!("csd baseline execution failed: {e}"))?;
+        let baseline = flatten_freqs_complex(&base_f, &base_p, |z| (z.re, z.im));
+        let py = python_signal_eval(
+            &python_bin,
+            "csd",
+            json!({
+                "x": x,
+                "y": y,
+                "fs": fs,
+                "nperseg": nperseg,
+                "noverlap": noverlap
+            }),
+            80,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(60, || {
+            kernel
+                .run_alloc(&x, &y)
+                .map(|_| ())
+                .map_err(|e| anyhow!("csd candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(60, || {
+            baseline_kernel
+                .run_alloc(&x, &y)
+                .map(|_| ())
+                .map_err(|e| anyhow!("csd baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // coherence
+    {
+        let case_id = "coherence_f64";
+        let x = signal.clone();
+        let y = x
+            .iter()
+            .enumerate()
+            .map(|(i, &v)| v * 0.9 + 0.1 * (i as f64 * 0.07).sin())
+            .collect::<Vec<_>>();
+        let fs = 100.0f64;
+        let nperseg = 128usize;
+        let noverlap = nperseg / 2;
+
+        let kernel = CoherenceKernel::try_new(CoherenceConfig { fs, nperseg })?;
+        let baseline_kernel = CoherenceKernel::try_new(CoherenceConfig { fs, nperseg })?;
+        let (cand_f, cand_c) = kernel
+            .run_alloc(&x, &y)
+            .map_err(|e| anyhow!("coherence candidate execution failed: {e}"))?;
+        let candidate = flatten_two_real(&cand_f, &cand_c);
+        let (base_f, base_c) = baseline_kernel
+            .run_alloc(&x, &y)
+            .map_err(|e| anyhow!("coherence baseline execution failed: {e}"))?;
+        let baseline = flatten_two_real(&base_f, &base_c);
+        let py = python_signal_eval(
+            &python_bin,
+            "coherence",
+            json!({
+                "x": x,
+                "y": y,
+                "fs": fs,
+                "nperseg": nperseg,
+                "noverlap": noverlap
+            }),
+            80,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(60, || {
+            kernel
+                .run_alloc(&x, &y)
+                .map(|_| ())
+                .map_err(|e| anyhow!("coherence candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(60, || {
+            baseline_kernel
+                .run_alloc(&x, &y)
+                .map(|_| ())
+                .map_err(|e| anyhow!("coherence baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // stft
+    {
+        let case_id = "stft_f64";
+        let x = signal.clone();
+        let fs = 100.0f64;
+        let nperseg = 128usize;
+        let noverlap = 64usize;
+
+        let kernel = StftKernel::try_new(StftConfig {
+            fs,
+            nperseg,
+            noverlap,
+        })?;
+        let baseline_kernel = StftKernel::try_new(StftConfig {
+            fs,
+            nperseg,
+            noverlap,
+        })?;
+        let candidate = flatten_stft_result(
+            &kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("stft candidate execution failed: {e}"))?,
+        );
+        let baseline = flatten_stft_result(
+            &baseline_kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("stft baseline execution failed: {e}"))?,
+        );
+        let py = python_signal_eval(
+            &python_bin,
+            "stft",
+            json!({ "x": x, "fs": fs, "nperseg": nperseg, "noverlap": noverlap }),
+            80,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(60, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("stft candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(60, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("stft baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // istft
+    {
+        let case_id = "istft_f64";
+        let x = signal.clone();
+        let fs = 100.0f64;
+        let nperseg = 128usize;
+        let noverlap = 64usize;
+        let stft_kernel = StftKernel::try_new(StftConfig {
+            fs,
+            nperseg,
+            noverlap,
+        })?;
+        let stft_output = stft_kernel
+            .run_alloc(&x)
+            .map_err(|e| anyhow!("istft source stft execution failed: {e}"))?;
+        let n_freq = stft_output.zxx.len();
+        let n_frames = stft_output.zxx.first().map_or(0, Vec::len);
+        let zxx_re_im = flatten_complex_rows(&stft_output.zxx, |z| (z.re, z.im));
+
+        let kernel = IstftKernel::try_new(IstftConfig {
+            fs,
+            nperseg,
+            noverlap,
+        })?;
+        let baseline_kernel = IstftKernel::try_new(IstftConfig {
+            fs,
+            nperseg,
+            noverlap,
+        })?;
+        let (cand_t, cand_y) = kernel
+            .run_alloc(&stft_output.zxx)
+            .map_err(|e| anyhow!("istft candidate execution failed: {e}"))?;
+        let candidate = flatten_two_real(&cand_t, &cand_y);
+        let (base_t, base_y) = baseline_kernel
+            .run_alloc(&stft_output.zxx)
+            .map_err(|e| anyhow!("istft baseline execution failed: {e}"))?;
+        let baseline = flatten_two_real(&base_t, &base_y);
+        let py = python_signal_eval(
+            &python_bin,
+            "istft",
+            json!({
+                "zxx_re_im": zxx_re_im,
+                "n_freq": n_freq,
+                "n_frames": n_frames,
+                "fs": fs,
+                "nperseg": nperseg,
+                "noverlap": noverlap
+            }),
+            80,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(60, || {
+            kernel
+                .run_alloc(&stft_output.zxx)
+                .map(|_| ())
+                .map_err(|e| anyhow!("istft candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(60, || {
+            baseline_kernel
+                .run_alloc(&stft_output.zxx)
+                .map(|_| ())
+                .map_err(|e| anyhow!("istft baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // spectrogram
+    {
+        let case_id = "spectrogram_f64";
+        let x = signal.clone();
+        let fs = 100.0f64;
+        let nperseg = 128usize;
+        let noverlap = 64usize;
+
+        let kernel = SpectrogramKernel::try_new(SpectrogramConfig {
+            fs,
+            nperseg,
+            noverlap,
+        })?;
+        let baseline_kernel = SpectrogramKernel::try_new(SpectrogramConfig {
+            fs,
+            nperseg,
+            noverlap,
+        })?;
+        let candidate = flatten_spectrogram_result(
+            &kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("spectrogram candidate execution failed: {e}"))?,
+        );
+        let baseline = flatten_spectrogram_result(
+            &baseline_kernel
+                .run_alloc(&x)
+                .map_err(|e| anyhow!("spectrogram baseline execution failed: {e}"))?,
+        );
+        let py = python_signal_eval(
+            &python_bin,
+            "spectrogram",
+            json!({ "x": x, "fs": fs, "nperseg": nperseg, "noverlap": noverlap }),
+            80,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(60, || {
+            kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("spectrogram candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(60, || {
+            baseline_kernel
+                .run_alloc(&x)
+                .map(|_| ())
+                .map_err(|e| anyhow!("spectrogram baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // freqz
+    {
+        let case_id = "freqz_f64";
+        let b = vec![0.25f64, 0.5, 0.25];
+        let a = vec![1.0f64];
+        let wor_n = 64usize;
+
+        let kernel = FreqzKernel::try_new(FreqzConfig { wor_n })?;
+        let baseline_kernel = FreqzKernel::try_new(FreqzConfig { wor_n })?;
+        let (cand_w, cand_h) = kernel
+            .run_alloc(&b, &a)
+            .map_err(|e| anyhow!("freqz candidate execution failed: {e}"))?;
+        let candidate = flatten_freqs_complex(&cand_w, &cand_h, |z| (z.re, z.im));
+        let (base_w, base_h) = baseline_kernel
+            .run_alloc(&b, &a)
+            .map_err(|e| anyhow!("freqz baseline execution failed: {e}"))?;
+        let baseline = flatten_freqs_complex(&base_w, &base_h, |z| (z.re, z.im));
+        let py = python_signal_eval(
+            &python_bin,
+            "freqz",
+            json!({ "b": b, "a": a, "wor_n": wor_n }),
+            140,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(110, || {
+            kernel
+                .run_alloc(&b, &a)
+                .map(|_| ())
+                .map_err(|e| anyhow!("freqz candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(110, || {
+            baseline_kernel
+                .run_alloc(&b, &a)
+                .map(|_| ())
+                .map_err(|e| anyhow!("freqz baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
+    // sosfreqz
+    {
+        let case_id = "sosfreqz_f64";
+        let wor_n = 64usize;
+
+        let kernel = SosFreqzKernel::try_new(SosFreqzConfig { wor_n })?;
+        let baseline_kernel = SosFreqzKernel::try_new(SosFreqzConfig { wor_n })?;
+        let (cand_w, cand_h) = kernel
+            .run_alloc(&sos)
+            .map_err(|e| anyhow!("sosfreqz candidate execution failed: {e}"))?;
+        let candidate = flatten_freqs_complex(&cand_w, &cand_h, |z| (z.re, z.im));
+        let (base_w, base_h) = baseline_kernel
+            .run_alloc(&sos)
+            .map_err(|e| anyhow!("sosfreqz baseline execution failed: {e}"))?;
+        let baseline = flatten_freqs_complex(&base_w, &base_h, |z| (z.re, z.im));
+        let py = python_signal_eval(
+            &python_bin,
+            "sosfreqz",
+            json!({ "sos": sos_flat, "wor_n": wor_n }),
+            140,
+        )?;
+
+        let candidate_ns = benchmark_avg_ns(110, || {
+            kernel
+                .run_alloc(&sos)
+                .map(|_| ())
+                .map_err(|e| anyhow!("sosfreqz candidate benchmark failed: {e}"))
+        })?;
+        let baseline_ns = benchmark_avg_ns(110, || {
+            baseline_kernel
+                .run_alloc(&sos)
+                .map(|_| ())
+                .map_err(|e| anyhow!("sosfreqz baseline benchmark failed: {e}"))
+        })?;
+
+        record_case(
+            &mut rows,
+            &mut case_plot_payload,
+            &plots_dir,
+            case_id,
+            candidate,
+            baseline,
+            py,
+            candidate_ns,
+            baseline_ns,
+        )?;
+    }
+
     // Window (hamming)
     {
         let case_id = "window_hamming_f64";
@@ -1832,6 +3123,77 @@ fn record_case(
     }));
 
     Ok(())
+}
+
+fn usize_vec_to_f64(values: &[usize]) -> Vec<f64> {
+    values.iter().map(|&v| v as f64).collect()
+}
+
+fn flatten_nested_f64(rows: &[Vec<f64>]) -> Vec<f64> {
+    let total = rows.iter().map(Vec::len).sum();
+    let mut out = Vec::with_capacity(total);
+    for row in rows {
+        out.extend_from_slice(row);
+    }
+    out
+}
+
+fn flatten_two_real(a: &[f64], b: &[f64]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(a.len() + b.len());
+    out.extend_from_slice(a);
+    out.extend_from_slice(b);
+    out
+}
+
+fn flatten_complex_rows<T>(rows: &[Vec<T>], mut to_pair: impl FnMut(&T) -> (f64, f64)) -> Vec<f64> {
+    let mut out = Vec::with_capacity(rows.iter().map(Vec::len).sum::<usize>() * 2);
+    for row in rows {
+        for value in row {
+            let (re, im) = to_pair(value);
+            out.push(re);
+            out.push(im);
+        }
+    }
+    out
+}
+
+fn flatten_freqs_complex<T>(
+    freqs: &[f64],
+    spectrum: &[T],
+    mut to_pair: impl FnMut(&T) -> (f64, f64),
+) -> Vec<f64> {
+    let mut out = Vec::with_capacity(freqs.len() + spectrum.len() * 2);
+    out.extend_from_slice(freqs);
+    for value in spectrum {
+        let (re, im) = to_pair(value);
+        out.push(re);
+        out.push(im);
+    }
+    out
+}
+
+fn flatten_stft_result(result: &StftResult) -> Vec<f64> {
+    let mut out = Vec::with_capacity(
+        result.frequencies.len()
+            + result.times.len()
+            + result.zxx.iter().map(Vec::len).sum::<usize>() * 2,
+    );
+    out.extend_from_slice(&result.frequencies);
+    out.extend_from_slice(&result.times);
+    out.extend(flatten_complex_rows(&result.zxx, |z| (z.re, z.im)));
+    out
+}
+
+fn flatten_spectrogram_result(result: &SpectrogramResult) -> Vec<f64> {
+    let mut out = Vec::with_capacity(
+        result.frequencies.len()
+            + result.times.len()
+            + result.sxx.iter().map(Vec::len).sum::<usize>(),
+    );
+    out.extend_from_slice(&result.frequencies);
+    out.extend_from_slice(&result.times);
+    out.extend(flatten_nested_f64(&result.sxx));
+    out
 }
 
 fn flatten_sos_coeffs(sos: &[Sos<f64>]) -> Vec<f64> {

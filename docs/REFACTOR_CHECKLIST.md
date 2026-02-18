@@ -66,7 +66,7 @@ Legend:
 | stats | `ModZScoreNormalize1D<T>` | yes | yes | yes | `ModZScoreKernel` |
 | linalg | `CompanionBuild1D<T>` | yes | yes | yes | `CompanionKernel` |
 | migration | legacy free functions cleanup | yes | yes | yes | public entrypoints are kernel-backed checked APIs; silent fallback wrappers removed from migrated paths |
-| contract | local contract runner (`xtask`) | yes | yes | yes | local-only artifacts under `target/contracts` |
+| contract | local contract runner (`xtask`) | yes | yes | yes | local-only artifacts under `target/contracts`; Python parity coverage expanded for all currently implemented SciPy checklist interfaces |
 
 ## Function Entrypoint Status
 
@@ -146,8 +146,9 @@ Legacy function-style helpers are internal-only (`pub(crate)`) and are not part 
 
 1. none (`Signal-First Priority Queue` 20/20 implemented)
 
-## Source Recheck Audit (2026-02-17)
+## Source Recheck Audit (2026-02-18)
 
 - Traversed source inventory: `71/71` files tracked across `sci-rs/src`, `sci-rs-core/src`, and `sci-rs-test/src`.
 - Traversal parity check: `0` untracked files and `0` stale entries in `docs/SOURCE_TRAVERSAL.md`.
 - Validation rerun after latest checked-path changes: `fmt`, `clippy -D warnings`, tests (`all-features`, `no-default-features`, `no-default-features --features alloc`), and `bench --no-run` all pass.
+- Contract parity audit: all `26` checklist `impl` rows now have `contract_case_ids`; latest local bundle includes `49` cases in `target/contracts/1771376659/`.
